@@ -1,0 +1,412 @@
+<!doctype html>
+<!--
+  HR Admin · Payroll
+  HR admin payroll: pay run, edit payslips, re-open and run payroll again.
+  Shared pieces (data, sidebar/top bar, payroll + leave engines, helpers) live in js/core.js and css/hive.css.
+-->
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta
+      name="viewport"
+      content="width=device-width, initial-scale=1, viewport-fit=cover"
+    />
+    <title>HR Admin · Payroll · Hive HRIS</title>
+    <script>
+      try {
+        var t = localStorage.getItem("hive.theme");
+        if (t) document.documentElement.setAttribute("data-theme", t);
+      } catch (e) {}
+    </script>
+    <link rel="stylesheet" href="css/hive.css" />
+  </head>
+  <body>
+    <div id="root"></div>
+    <div id="sc"></div>
+    <div id="md"></div>
+    <div id="ts"></div>
+
+    <script>
+      window.HIVE_PAGE = { role: "adm", page: "payroll" };
+    </script>
+    <script src="js/core.js"></script>
+    <script>
+      "use strict";
+      /* ===== HR Admin · Payroll — this page's screen ===== */
+      const WHT_MONTHLY_FREE = 20833;
+
+      // editable until payroll is run
+      const holInPeriod = (label) => {
+        const p = periods().find((q) => q.label === label);
+        return p ? holidays.filter((h) => h.d >= p.from && h.d <= p.to) : [];
+      };
+
+      /* ---------- ADMIN: EDIT PAYSLIP ---------- */
+      function newDraft(id, label) {
+        const cur = payAdj[id + "|" + label];
+        if (cur) {
+          const d = JSON.parse(JSON.stringify(cur));
+          d.id = id;
+          d.label = label;
+          return d;
+        }
+        const def = CONTRIB(emp(id)),
+          on = !isIC(emp(id));
+        return {
+          id: id,
+          label: label,
+          sss: { on: on, amt: round2(def.sss) },
+          ph: { on: on, amt: round2(def.ph) },
+          pg: { on: on, amt: round2(def.pg) },
+          extra: [],
+        };
+      }
+
+      function sumHtml() {
+        const x = payWith(emp(slipDraft.id), slipDraft),
+          c = x.sss + x.ph + x.pg,
+          mo = x.taxable * 2;
+        const line = (k, v, b) =>
+          `<div class="k"${b ? ' style="font-weight:700;color:var(--tx)"' : ""}>${k}</div><div class="v"${b ? ' style="font-weight:700"' : ""}>${v}</div>`;
+        return `<div class="docgrid" style="margin:0">
+      ${line("Gross pay", PHP(x.g))}
+      ${line("Contributions deducted", "−" + PHP(c))}
+      ${line("Taxable income (gross − allowances − contributions)", PHP(x.taxable))}
+      ${line("Withholding tax (automatic)", "−" + PHP(x.tx))}
+      ${line("Net pay", PHP(x.net), 1)}
+    </div>
+    <div class="mut" style="font-size:12px;margin-top:10px">${
+      x.tx > 0
+        ? `Monthly equivalent ${PHP(mo)} is above ₱${WHT_MONTHLY_FREE.toLocaleString("en-PH")}, so withholding tax is deducted automatically.`
+        : `Monthly equivalent ${PHP(mo)} is within the ₱${WHT_MONTHLY_FREE.toLocaleString("en-PH")} tax-free amount — no withholding tax.`
+    }</div>`;
+      }
+
+      function slipEditHtml() {
+        const d = slipDraft,
+          e = emp(d.id),
+          hol = holInPeriod(d.label).filter(
+            (h) => !d.extra.some((x) => x.hd === h.d),
+          );
+        const row = (
+          k,
+          name,
+        ) => `<div class="pe-row"><span style="font-size:14px">${name}</span>
+      <input type="number" min="0" step="0.01" data-pe="${k}-amt" value="${d[k].amt}" aria-label="${name} amount"${d.sss.on || d.ph.on || d.pg.on ? "" : " disabled"}></div>`;
+        const allOn = d.sss.on || d.ph.on || d.pg.on;
+        const ex = d.extra
+          .map(
+            (x, i) => `<div class="pe-extra">
+      <input data-pe="xl-${i}" value="${esc(x.label)}" placeholder="Description" aria-label="Additional pay description">
+      <input type="number" min="0" step="0.01" data-pe="xa-${i}" value="${x.amt}" aria-label="Additional pay amount">
+      <button class="sm dngr" data-a="pxdel" data-i="${i}">Remove</button></div>`,
+          )
+          .join("");
+        return `<div class="fig">EDIT PAYSLIP</div>
+    <h3 style="margin:6px 0 2px">${esc(e.n)}</h3>
+    <div class="mut" style="font-size:13px">${esc(e.id)} · ${esc(d.label)}</div>
+
+    <div class="fig" style="margin-top:18px">SSS · PHILHEALTH · PAG-IBIG</div>
+    <p class="mut" style="font-size:12.5px;margin:4px 0 0">${isIC(e) ? "Independent contractor — switched off by default. Switch it on to deduct the three contributions (standard amounts are filled in; you can change them)." : "Switch off to skip all three for this payslip, or change any amount (set one to 0 to skip just that one)."} Skipped contributions are not subtracted when the tax is computed.</p>
+    <label class="sw" style="margin-top:12px"><input type="checkbox" data-pe="con-on"${allOn ? " checked" : ""}><span class="tr"></span><span>Deduct SSS, PhilHealth &amp; Pag-IBIG</span></label>
+    <div id="peCon"${allOn ? "" : ' class="off"'}>${row("sss", "SSS")}${row("ph", "PhilHealth")}${row("pg", "Pag-IBIG")}${allOn ? "" : `<p class="mut" style="font-size:12px;margin:10px 0 0">Switched off — none of these will be deducted. Switch it back on to use or edit the amounts.</p>`}</div>
+
+    <div class="fig" style="margin-top:18px">ADDITIONAL PAY</div>
+    <p class="mut" style="font-size:12.5px;margin:4px 0 0">Holidays are unpaid by default because the team usually doesn't work on them. Add holiday pay (defaults to one day's pay — edit as needed) or any other extra pay only when it applies.</p>
+    ${ex || `<p class="mut" style="font-size:13px;margin:10px 0 0">No additional pay on this payslip.</p>`}
+    <div class="row" style="margin:12px 0 0">
+      ${
+        hol.length
+          ? `<select id="peHol" style="flex:1;min-width:190px;width:auto" aria-label="Holiday">${hol.map((h) => `<option value="${h.d}">${esc(h.n)} · ${shortDate(h.d)}</option>`).join("")}</select>
+        <button class="sm" data-a="pxhol">${ico("plus")} Add holiday pay</button>`
+          : `<span class="mut" style="font-size:12.5px">No unpaid holidays left in this pay period.</span>`
+      }
+      <button class="sm" data-a="pxoth">${ico("plus")} Other pay</button>
+    </div>
+
+    <div class="fig" style="margin-top:18px">WITHHOLDING TAX · AUTOMATIC</div>
+    <div class="pe-sum" id="peSum">${sumHtml()}</div>
+
+    <div class="mact no-print">
+      ${payAdj[d.id + "|" + d.label] ? `<button class="dngr" data-a="pxreset">Reset to standard</button>` : ""}
+      <button data-a="close">Cancel</button>
+      <button class="pri" data-a="pxsave">Save payslip</button>
+    </div>`;
+      }
+
+      function syncDraft() {
+        if (!slipDraft) return;
+        const g = (n) => document.querySelector('#md [data-pe="' + n + '"]');
+        const t = g("con-on");
+        if (t) {
+          const box = $("#peCon");
+          if (box) {
+            box.classList.toggle("off", !t.checked);
+            box.querySelectorAll("input").forEach((i) => {
+              i.disabled = !t.checked;
+            });
+          }
+          ["sss", "ph", "pg"].forEach((k) => {
+            slipDraft[k].on = t.checked;
+            const a = g(k + "-amt");
+            if (a) slipDraft[k].amt = Math.max(0, parseFloat(a.value) || 0);
+          });
+        }
+        slipDraft.extra.forEach((x, i) => {
+          const l = g("xl-" + i),
+            a = g("xa-" + i);
+          if (l) x.label = l.value;
+          if (a) x.amt = Math.max(0, parseFloat(a.value) || 0);
+        });
+      }
+
+      function onPe(ev) {
+        const el = ev.target;
+        if (!slipDraft || !el.dataset || el.dataset.pe === undefined) return;
+        syncDraft();
+        const s = $("#peSum");
+        if (s) s.innerHTML = sumHtml();
+      }
+
+      document.addEventListener("input", onPe);
+
+      document.addEventListener("change", onPe);
+
+      function admPay() {
+        const cur = periods()[0],
+          r = emps.map((e) => ({ e: e, x: pay(e, cur.label) })),
+          T = (k) => r.reduce((a, y) => a + y.x[k], 0);
+        return (
+          head(
+            "HR Admin / Payroll",
+            `Pay runs,<br><em>without friction.</em>`,
+            "Period " +
+              cur.label +
+              ". Rates are simplified samples — verify current SSS, PhilHealth, Pag-IBIG and tax tables before real use.",
+          ) +
+          `<div class="grid g4">
+      ${stat("GROSS", "Gross", `<span style="font-size:24px">${PHP(T("g"))}</span>`)}
+      ${stat("DEDUCTIONS", "Deductions", `<span style="font-size:24px">${PHP(T("ded"))}</span>`)}
+      ${stat("NET", "Net pay", `<span style="font-size:24px">${PHP(T("net"))}</span>`)}
+      <div class="card"><div class="fig">STATUS</div><h3>${paid ? tg("Processed") : tg("Draft")}${!paid && reopened ? ` <span class="tag info">Re-opened</span>` : ""}</h3>
+        ${
+          paid
+            ? `<button class="pri" data-a="reopen" style="margin-top:14px">Re-open payroll</button>
+            <small class="mut" style="display:block;margin-top:8px;font-size:11.5px;line-height:1.4">Found an error? Re-open to unlock the payslips, fix them, then run payroll again.</small>`
+            : `<button class="pri" data-a="run" style="margin-top:14px">${runs ? "Run payroll" : "Run payroll"}</button>
+            <small class="mut" style="display:block;margin-top:8px;font-size:11.5px;line-height:1.4">${runs ? "Releases the corrected payslips to employees again." : "Finalises this period: locks the payslips and releases them to employees."}</small>`
+        }</div>
+    </div>
+    <div class="mt">${tbl(
+      ["Employee", "Gross", "Deductions", "Net", ""],
+      r.map((y) => [
+        who(y.e) +
+          (isIC(y.e) ? ` <span class="tag">Contractor</span>` : "") +
+          (y.x.edited ? ` <span class="tag info">Edited</span>` : ""),
+        PHP(y.x.g),
+        `<span class="mut">−${PHP(y.x.ded)}</span>`,
+        `<b>${PHP(y.x.net)}</b>`,
+        `<button class="sm" data-a="slip" data-i="${y.e.id}|${esc(cur.label)}">Preview</button>` +
+          (paid
+            ? ""
+            : ` <button class="sm" data-a="slipedit" data-i="${y.e.id}|${esc(cur.label)}">${ico("edit")} Edit</button>`),
+      ]),
+    )}</div>
+    <p class="mut" style="font-size:12.5px;margin-top:14px">${
+      paid
+        ? "Payroll is processed — payslips are locked. Use <b>Re-open payroll</b> if something needs correcting."
+        : "Use <b>Edit</b> to switch SSS, PhilHealth or Pag-IBIG on/off (or change the amount) and to add holiday pay. Withholding tax is calculated automatically. Edits lock once you run payroll, but you can re-open it and run it again if there are errors."
+    }</p>`
+        );
+      }
+
+      /* ===== button actions on this page ===== */
+      HIVE.actions["slipedit"] = function (i, el, a) {
+        const done = (msg) => {
+          render();
+          if (msg) toast(msg);
+        };
+        const p = i.split("|"),
+          lab = p.slice(1).join("|");
+        if (!(session && session.role === "adm") || !slipOpen(lab)) {
+          toast("This payslip is locked — payroll is already processed", true);
+          return;
+        }
+        slipDraft = newDraft(p[0], lab);
+        modal(slipEditHtml(), { wide: true, noClose: true });
+        return;
+      };
+      HIVE.actions["pxhol"] = function (i, el, a) {
+        const done = (msg) => {
+          render();
+          if (msg) toast(msg);
+        };
+        syncDraft();
+        const sel = $("#peHol");
+        if (!sel || !slipDraft) return;
+        const h = holidays.find((x) => x.d === sel.value);
+        if (!h) return;
+        if (slipDraft.extra.some((x) => x.hd === h.d)) {
+          toast("Holiday pay for " + h.n + " is already added", true);
+          return;
+        }
+        slipDraft.extra.push({
+          label: "Holiday pay — " + h.n,
+          amt: Math.round(emp(slipDraft.id).s / 22),
+          hd: h.d,
+        });
+        modal(slipEditHtml(), { wide: true, noClose: true });
+        return;
+      };
+      HIVE.actions["pxoth"] = function (i, el, a) {
+        const done = (msg) => {
+          render();
+          if (msg) toast(msg);
+        };
+        syncDraft();
+        if (!slipDraft) return;
+        slipDraft.extra.push({ label: "", amt: 0 });
+        modal(slipEditHtml(), { wide: true, noClose: true });
+        return;
+      };
+      HIVE.actions["pxdel"] = function (i, el, a) {
+        const done = (msg) => {
+          render();
+          if (msg) toast(msg);
+        };
+        syncDraft();
+        if (!slipDraft) return;
+        slipDraft.extra.splice(+i, 1);
+        modal(slipEditHtml(), { wide: true, noClose: true });
+        return;
+      };
+      HIVE.actions["pxreset"] = function (i, el, a) {
+        const done = (msg) => {
+          render();
+          if (msg) toast(msg);
+        };
+        if (!slipDraft) return;
+        const d = slipDraft,
+          k = d.id + "|" + d.label;
+        delete payAdj[k];
+        slipDraft = null;
+        audit.unshift({
+          ts: Date.now(),
+          who: "HR Admin",
+          act: "Payslip reset",
+          det: nm(d.id) + " · " + d.label,
+        });
+        render();
+        modal(slipDoc(d.id, d.label), { wide: true, noClose: true });
+        toast("Payslip reset to standard deductions");
+        return;
+      };
+      HIVE.actions["pxsave"] = function (i, el, a) {
+        const done = (msg) => {
+          render();
+          if (msg) toast(msg);
+        };
+        syncDraft();
+        const d = slipDraft;
+        if (!d) return;
+        const e = emp(d.id),
+          def = CONTRIB(e),
+          k = d.id + "|" + d.label;
+        d.extra = d.extra
+          .filter((x) => x.amt > 0)
+          .map((x) => ({
+            label: (x.label || "").trim() || "Additional pay",
+            amt: round2(x.amt),
+            hd: x.hd,
+          }));
+        ["sss", "ph", "pg"].forEach((c) => {
+          d[c].amt = round2(d[c].amt);
+        });
+        const ic = isIC(e),
+          std =
+            ["sss", "ph", "pg"].every((c) =>
+              ic
+                ? !d[c].on
+                : d[c].on && Math.abs(d[c].amt - round2(def[c])) < 0.005,
+            ) && !d.extra.length;
+        if (std) delete payAdj[k];
+        else payAdj[k] = d;
+        audit.unshift({
+          ts: Date.now(),
+          who: "HR Admin",
+          act: "Payslip edited",
+          det: e.n + " · " + d.label,
+        });
+        slipDraft = null;
+        render();
+        modal(slipDoc(d.id, d.label), { wide: true, noClose: true });
+        toast("Payslip updated — " + e.n);
+        return;
+      };
+      HIVE.actions["reopen"] = function (i, el, a) {
+        const done = (msg) => {
+          render();
+          if (msg) toast(msg);
+        };
+        confirmDlg(
+          "Re-open payroll for " +
+            periods()[0].label +
+            "? Payslips will be unlocked for editing and hidden from employees until you run payroll again.",
+          () => {
+            paid = false;
+            reopened++;
+            audit.unshift({
+              ts: Date.now(),
+              who: "HR Admin",
+              act: "Payroll re-opened",
+              det: periods()[0].label + " · unlocked for corrections",
+            });
+            render();
+            toast(
+              "Payroll re-opened — edit the payslips, then run payroll again",
+            );
+          },
+        );
+        return;
+      };
+      HIVE.actions["run"] = function (i, el, a) {
+        const done = (msg) => {
+          render();
+          if (msg) toast(msg);
+        };
+        busy(el, runs ? "Re-processing…" : "Processing…", 900, () => {
+          const again = runs > 0;
+          paid = true;
+          runs++;
+          audit.unshift({
+            ts: Date.now(),
+            who: "HR Admin",
+            act: again ? "Payroll run again" : "Payroll run",
+            det: periods()[0].label,
+          });
+          pushNoti(
+            "payslip",
+            again
+              ? "Corrected payslip for " + periods()[0].label + " is available"
+              : "Payslip for " + periods()[0].label + " is available",
+            again
+              ? "HR corrected this payslip and re-ran payroll. Please review the updated amounts."
+              : "Net pay has been calculated for the whole team.",
+            "#emp-payslips",
+          );
+          render();
+          toast(
+            again
+              ? "Payroll re-run — corrected payslips released"
+              : "Payroll processed",
+          );
+        });
+        return;
+      };
+
+      /* ===== start ===== */
+      HIVE.view = admPay;
+      hiveStart();
+    </script>
+  </body>
+</html>

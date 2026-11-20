@@ -1,0 +1,95 @@
+<!doctype html>
+<!--
+  HR Admin · Reports
+  HR admin reports: headcount and summary reports, downloads.
+  Shared pieces (data, sidebar/top bar, payroll + leave engines, helpers) live in js/core.js and css/hive.css.
+-->
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta
+      name="viewport"
+      content="width=device-width, initial-scale=1, viewport-fit=cover"
+    />
+    <title>HR Admin · Reports · Hive HRIS</title>
+    <script>
+      try {
+        var t = localStorage.getItem("hive.theme");
+        if (t) document.documentElement.setAttribute("data-theme", t);
+      } catch (e) {}
+    </script>
+    <link rel="stylesheet" href="css/hive.css" />
+  </head>
+  <body>
+    <div id="root"></div>
+    <div id="sc"></div>
+    <div id="md"></div>
+    <div id="ts"></div>
+
+    <script>
+      window.HIVE_PAGE = { role: "adm", page: "reports" };
+    </script>
+    <script src="js/core.js"></script>
+    <script>
+      "use strict";
+      /* ===== HR Admin · Reports — this page's screen ===== */
+      function admRep() {
+        const R = [
+          [
+            "Headcount",
+            `${emps.length} employees across ${D.length} departments`,
+          ],
+          [
+            "Attendance",
+            `${todayLogs().length} of ${emps.length} present today`,
+          ],
+          [
+            "Leave",
+            `${leaves.filter((l) => l.st === "Approved").length} approved, ${leaves.filter((l) => l.st === "Pending").length} pending`,
+          ],
+          [
+            "Corrections",
+            `${fixes.filter((f) => f.st === "Pending").length} awaiting review, ${audit.length} logged changes`,
+          ],
+          [
+            "Bonus",
+            `${Object.values(bonusLog).filter((b) => b.status === "Qualified").length} qualified months, ${Object.values(bonusLog).filter((b) => b.status === "Voided").length} voided`,
+          ],
+          [
+            "Payroll",
+            `${PHP(emps.reduce((a, e) => a + pay(e, periods()[0].label).net, 0))} net this period`,
+          ],
+        ];
+        return (
+          head(
+            "HR Admin / Reports",
+            `Numbers,<br><em>ready to share.</em>`,
+            "Summaries with mock export buttons.",
+          ) +
+          `<div class="grid g2">${R.map(
+            ([
+              a,
+              b,
+            ]) => `<div class="card"><div class="fig">REPORT</div><h3>${a}</h3><p class="mut">${b}</p>
+      <button class="sm" data-a="ex">Export CSV</button> <button class="sm" data-a="ex">Export PDF</button></div>`,
+          ).join("")}</div>`
+        );
+      }
+
+      /* ===== button actions on this page ===== */
+      HIVE.actions["dl"] = function (i, el, a) {
+        const done = (msg) => {
+          render();
+          if (msg) toast(msg);
+        };
+        toast("Download started (demo)");
+        return;
+      };
+      HIVE.actions["ex"] = HIVE.actions["dl"];
+
+      /* ===== start ===== */
+      HIVE.view = admRep;
+      hiveStart();
+    </script>
+  </body>
+</html>

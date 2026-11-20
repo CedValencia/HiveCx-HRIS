@@ -1,0 +1,356 @@
+<!doctype html>
+<!--
+  HR Admin · Employees
+  HR admin employees: add employee, worker type, directory, profiles.
+  Shared pieces (data, sidebar/top bar, payroll + leave engines, helpers) live in js/core.js and css/hive.css.
+-->
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta
+      name="viewport"
+      content="width=device-width, initial-scale=1, viewport-fit=cover"
+    />
+    <title>HR Admin · Employees · Hive HRIS</title>
+    <script>
+      try {
+        var t = localStorage.getItem("hive.theme");
+        if (t) document.documentElement.setAttribute("data-theme", t);
+      } catch (e) {}
+    </script>
+    <link rel="stylesheet" href="css/hive.css" />
+  </head>
+  <body>
+    <div id="root"></div>
+    <div id="sc"></div>
+    <div id="md"></div>
+    <div id="ts"></div>
+
+    <script>
+      window.HIVE_PAGE = { role: "adm", page: "employees" };
+    </script>
+    <script src="js/core.js"></script>
+    <script>
+      "use strict";
+      /* ===== HR Admin · Employees — this page's screen ===== */
+      document.addEventListener("change", (ev) => {
+        const el = ev.target;
+        if (!el.dataset || el.dataset.ty === undefined) return;
+        const e = emps.find((x) => x.id === el.dataset.ty);
+        if (!e) return;
+        e.ty =
+          el.value === "Independent contractor"
+            ? "Independent contractor"
+            : "Employee";
+        audit.unshift({
+          ts: Date.now(),
+          who: "HR Admin",
+          act: "Worker type changed",
+          det: e.n + " → " + e.ty,
+        });
+        render();
+        toast(
+          isIC(e)
+            ? e.n +
+                " is now an independent contractor — SSS, PhilHealth and Pag-IBIG are off by default"
+            : e.n + " is now an employee — SSS, PhilHealth and Pag-IBIG apply",
+        );
+      });
+
+      const nextId = () =>
+        "HV-" +
+        String(
+          Math.max(
+            0,
+            ...emps.map((e) => parseInt(String(e.id).slice(3), 10) || 0),
+          ) + 1,
+        ).padStart(3, "0");
+      const genTemp = () => {
+        const c = "ABCDEFGHJKMNPQRSTUVWXYZabcdefghjkmnpqrstuvwxyz23456789",
+          a = new Uint32Array(10);
+        (
+          window.crypto || {
+            getRandomValues: (x) =>
+              x.forEach((_, i) => (x[i] = Math.random() * 4e9)),
+          }
+        ).getRandomValues(a);
+        return Array.from(a, (n) => c[n % c.length]).join("");
+      };
+      const slugName = (n) =>
+        String(n || "")
+          .trim()
+          .toLowerCase()
+          .replace(/[^a-z0-9\s]/g, "")
+          .split(/\s+/)
+          .filter(Boolean)
+          .join(".");
+
+      /* username + email follow the name until HR types their own */
+      document.addEventListener("input", (ev) => {
+        const el = ev.target;
+        if (!el || !el.id) return;
+        if (el.id === "aeU" || el.id === "aeM") {
+          el.dataset.touched = "1";
+          return;
+        }
+        if (el.id !== "aeN") return;
+        const u = $("#aeU"),
+          m = $("#aeM"),
+          s = slugName(el.value);
+        if (u && !u.dataset.touched) u.value = s;
+        if (m && !m.dataset.touched) m.value = s ? s + "@hive.com" : "";
+      });
+
+      function admEmp() {
+        const l = emps.filter((e) =>
+          (e.n + e.r + e.d + e.id + (e.user || ""))
+            .toLowerCase()
+            .includes(q.toLowerCase()),
+        );
+        const npend = emps.filter((e) => e.pend).length;
+        return (
+          head(
+            "HR Admin / Employees",
+            `Every employee,<br><em>one directory.</em>`,
+            "Create accounts, share the sign-in details, and let each employee fill in their own personal info on first login.",
+          ) +
+          `<div class="card"><h3>Create employee account</h3>
+      <p class="mut" style="font-size:13px;margin:0">Enter only what HR knows. The employee adds their birthday, contact number, address and emergency contact themselves on first sign-in, and replaces the temporary password.</p>
+      <form data-f="emp" novalidate>
+        <div><label for="aeN">Full name <span class="req">*</span></label><input id="aeN" name="n" required autocomplete="off"></div>
+        <div><label for="aeM">Work email <span class="req">*</span></label><input id="aeM" name="email" type="email" required autocomplete="off"></div>
+        <div><label for="aeU">Username <span class="req">*</span></label><input id="aeU" name="user" required autocomplete="off" placeholder="e.g. juan.delacruz"></div>
+        <div><label for="aeR">Position <span class="req">*</span></label><input id="aeR" name="r" required></div>
+        <div><label for="aeD">Department</label><select id="aeD" name="d">${D.map((d) => `<option>${d}</option>`).join("")}</select></div>
+        <div><label for="aeS">Monthly salary (₱) <span class="req">*</span></label><input id="aeS" name="s" type="number" min="0" required></div>
+        <div><label for="aeT">Worker type</label><select id="aeT" name="ty"><option>Employee</option><option>Independent contractor</option></select></div>
+        <div><label for="aeJ">Date hired <span class="req">*</span></label><input id="aeJ" name="j" type="date" min="${Y}" value="${Y}" required></div>
+        <div class="full"><label for="aeW">Temporary password <span class="req">*</span></label>
+          <div class="pw"><input id="aeW" name="pw" value="${genTemp()}" required autocomplete="off" style="padding-right:96px;font-family:ui-monospace,Menlo,monospace">
+            <button type="button" data-a="genpw">Generate</button></div></div>
+        <div class="hintbox">The employee signs in with the username and this temporary password, then completes their profile and sets their own password.</div>
+        <div><button class="pri wide" type="submit">Create account</button></div>
+      </form></div>
+    <div class="row mt"><div style="position:relative;flex:1;max-width:320px">
+      <input id="q" placeholder="Search employees…" value="${esc(q)}" aria-label="Search employees" style="padding-left:36px">
+      <span style="position:absolute;left:11px;top:50%;transform:translateY(-50%);color:var(--mut)">${ico("search")}</span></div>
+      <span class="mut">${l.length} shown${npend ? ` · ${npend} waiting to complete their profile` : ""}</span></div>
+    ${tbl(
+      [
+        "Employee",
+        "Position",
+        "Department",
+        "Worker type",
+        "Account",
+        "Hired",
+        "",
+      ],
+      l.map((e) => [
+        who(e) +
+          `<div class="fig" style="margin-left:38px">${e.id}${e.user ? " · " + esc(e.user) : ""}</div>`,
+        esc(e.r),
+        `<span class="tag">${e.d}</span>`,
+        `<select data-ty="${e.id}" aria-label="Worker type for ${esc(e.n)}" style="width:auto;padding:6px 10px;font-size:13px${isIC(e) ? ";color:var(--mut)" : ""}"><option${isIC(e) ? "" : " selected"}>Employee</option><option${isIC(e) ? " selected" : ""}>Independent contractor</option></select>`,
+        e.pend
+          ? `<span class="tag wait">Pending profile</span>`
+          : `<span class="tag ok">Active</span>`,
+        shortDate(e.j),
+        `<button class="sm" data-a="view" data-i="${e.id}">Profile</button> ` +
+          (e.pend
+            ? `<button class="sm" data-a="cred" data-i="${e.id}">Sign-in details</button> `
+            : "") +
+          `<button class="sm dngr" data-a="del" data-i="${e.id}">Remove</button>`,
+      ]),
+    )}`
+        );
+      }
+
+      function credModal(e, created) {
+        const text =
+          "Hive HRIS sign-in\nName: " +
+          e.n +
+          "\nUsername: " +
+          e.user +
+          "\nTemporary password: " +
+          e.pass +
+          "\nYou'll be asked to complete your profile and choose a new password on your first sign-in.";
+        modal(
+          `<div class="fig">${created ? "ACCOUNT CREATED" : "SIGN-IN DETAILS"}</div><h3 style="margin:6px 0 4px">${esc(e.n)}</h3>
+    <p class="mut" style="font-size:13px;margin:0 0 6px">Give these to the employee. On first sign-in they complete their profile and replace the temporary password — HR will no longer be able to see it after that.</p>
+    <div class="docgrid">
+      <div class="k">Employee ID</div><div class="v">${esc(e.id)}</div>
+      <div class="k">Username</div><div class="v cred">${esc(e.user)}</div>
+      <div class="k">Temporary password</div><div class="v cred">${esc(e.pass)}</div>
+      <div class="k">Status</div><div class="v"><span class="tag wait">Pending profile</span></div>
+    </div>
+    <div class="mact no-print"><button data-a="copycred" data-i="${esc(encodeURIComponent(text))}">Copy details</button><button class="pri" data-a="close">Done</button></div>`,
+          { noClose: true },
+        );
+      }
+
+      function empModal(id) {
+        const e = emp(id);
+        modal(`<div class="fig">${esc(e.id)}</div><h3 style="margin:6px 0 12px">${esc(e.n)} ${e.pend ? `<span class="tag wait" style="vertical-align:middle">Pending profile</span>` : ""}</h3>
+    ${[
+      ["Position", e.r],
+      ["Worker type", e.ty || "Employee"],
+      ["Department", e.d],
+      ["Date hired", shortDate(e.j)],
+      ["Username", e.user || e.id],
+      ["Birthday", e.b || "—"],
+      ["Monthly salary", PHP(e.s)],
+      ["Email", e.email],
+      ["Contact", e.ph || "—"],
+      ["Address", e.addr || "—"],
+      ["Emergency contact", e.ec || "—"],
+      [
+        "Assigned shift",
+        shiftOf(id).name + " · " + shiftOf(id).start + "–" + shiftOf(id).end,
+      ],
+    ]
+      .map(
+        (x) =>
+          `<div class="ls"><span class="mut">${x[0]}</span><br>${esc(x[1])}</div>`,
+      )
+      .join("")}
+    ${e.pend ? `<p class="mut" style="font-size:12.5px">Personal details stay empty until the employee completes their profile on first sign-in.</p>` : ""}
+    <div class="ls">📄 Employment contract.pdf · 📄 Government IDs.pdf</div>`);
+      }
+
+      /* ===== button actions on this page ===== */
+      HIVE.actions["del"] = function (i, el, a) {
+        confirmDlg("Remove " + nm(i) + " from the employee directory?", () => {
+          emps = emps.filter((e) => e.id !== i);
+          render();
+          toast("Employee removed");
+        });
+        return;
+      };
+      HIVE.actions["view"] = function (i, el, a) {
+        empModal(i);
+        return;
+      };
+      HIVE.actions["cred"] = function (i, el, a) {
+        const e = emps.find((x) => x.id === i);
+        if (e && e.pend) credModal(e, false);
+        return;
+      };
+      HIVE.actions["genpw"] = function (i, el, a) {
+        const f = $("#aeW");
+        if (f) f.value = genTemp();
+        return;
+      };
+      HIVE.actions["copycred"] = function (i, el, a) {
+        const text = decodeURIComponent(i),
+          ok = () => toast("Sign-in details copied");
+        const fallback = () => {
+          const t = document.createElement("textarea");
+          t.value = text;
+          t.style.position = "fixed";
+          t.style.opacity = "0";
+          document.body.appendChild(t);
+          t.select();
+          try {
+            document.execCommand("copy");
+            ok();
+          } catch (e) {
+            toast("Couldn't copy — select the text and copy it", true);
+          }
+          t.remove();
+        };
+        if (navigator.clipboard && navigator.clipboard.writeText)
+          navigator.clipboard.writeText(text).then(ok, fallback);
+        else fallback();
+        return;
+      };
+
+      /* ===== forms on this page ===== */
+      HIVE.forms["emp"] = function (form, f, btn, ev, k) {
+        const n = String(f.n || "").trim(),
+          email = String(f.email || "").trim(),
+          user = String(f.user || "").trim(),
+          pw = String(f.pw || "");
+        if (!n) return errBox(form, "Enter the employee's full name.");
+        if (!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(email))
+          return errBox(form, "Enter a valid work email address.");
+        if (!/^[a-zA-Z0-9._-]{3,}$/.test(user))
+          return errBox(
+            form,
+            "Username needs at least 3 characters — letters, numbers, dots, dashes or underscores only.",
+          );
+        if (!String(f.r || "").trim()) return errBox(form, "Enter a position.");
+        if (!f.s || Number(f.s) <= 0)
+          return errBox(form, "Enter a valid monthly salary.");
+        if (!f.j) return errBox(form, "Choose the date hired.");
+        if (f.j < Y)
+          return errBox(
+            form,
+            "Date hired can't be in the past — attendance and leave start counting from this date.",
+          );
+        if (pw.length < 6)
+          return errBox(
+            form,
+            "The temporary password must be at least 6 characters. Use Generate for a random one.",
+          );
+        const taken = (v) =>
+          emps.some((e) =>
+            [e.user, e.email, e.id].some(
+              (x) => x && String(x).toLowerCase() === v.toLowerCase(),
+            ),
+          ) || ["admin", "admin@hivehris.com"].includes(v.toLowerCase());
+        if (taken(user))
+          return errBox(
+            form,
+            "That username is already used — pick another one.",
+          );
+        if (taken(email))
+          return errBox(
+            form,
+            "That email is already linked to another account.",
+          );
+        busy(btn, "Creating…", 500, () => {
+          const id = nextId();
+          const e = {
+            id: id,
+            n: n,
+            r: String(f.r).trim(),
+            d: f.d,
+            s: Number(f.s),
+            j: f.j,
+            b: "",
+            email: email,
+            user: user,
+            ph: "",
+            addr: "",
+            ec: "",
+            sh: "day",
+            st: "Probationary",
+            pass: pw,
+            twofa: false,
+            pend: true,
+            created: Date.now(),
+            ty:
+              f.ty === "Independent contractor"
+                ? "Independent contractor"
+                : "Employee",
+          };
+          emps.push(e);
+          audit.unshift({
+            ts: Date.now(),
+            who: "HR Admin",
+            act: "Employee account created",
+            det: n + " · " + id + " · username " + user,
+          });
+          render();
+          credModal(e, true);
+          toast("Account created · " + id);
+        });
+        return;
+      };
+
+      /* ===== start ===== */
+      HIVE.view = admEmp;
+      hiveStart();
+    </script>
+  </body>
+</html>
