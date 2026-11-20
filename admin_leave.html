@@ -1,0 +1,103 @@
+<!DOCTYPE html>
+<!--
+  HR Admin · Leave
+  HR admin leave: approvals, team calendar, leave policy, file leave for an employee.
+  Shared pieces (data, sidebar/top bar, payroll + leave engines, helpers) live in js/core.js and css/hive.css.
+-->
+<html lang="en"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>HR Admin · Leave · Hive HRIS</title>
+<script>try{var t=localStorage.getItem("hive.theme");if(t)document.documentElement.setAttribute("data-theme",t)}catch(e){}</script>
+<link rel="stylesheet" href="css/hive.css">
+</head>
+<body>
+<script src="js/hive-loader.js"></script>
+<div id="root"></div><div id="sc"></div><div id="md"></div><div id="ts"></div>
+
+<script>window.HIVE_PAGE={role:"adm",page:"leave"};</script>
+<script src="js/core.js"></script>
+<!-- <script src="js/leave-day.js"></script> -->
+<script>
+"use strict";
+/* ===== HR Admin · Leave — this page's screen ===== */
+function leaveForm(forAdmin){
+  return`<form data-f="leave" novalidate>
+    ${forAdmin?`<div><label for="lfE">Employee</label><select id="lfE" name="e">${emps.map(e=>`<option value="${e.id}">${esc(e.n)}</option>`).join("")}</select></div>`:""}
+    <div><label for="lfT">Leave type</label><select id="lfT" name="t"><option>Vacation</option><option>Sick</option><option>Emergency</option></select></div>
+    <div><label for="lfF">Start date <span class="req">*</span></label><input id="lfF" type="date" name="f" min="${Y}" required data-live></div>
+    <div><label for="lfTo">End date <span class="req">*</span></label><input id="lfTo" type="date" name="to" min="${Y}" required data-live></div>
+    ${forAdmin?"":`<div class="hintbox" id="lvDays">Pick your dates — leave days are calculated automatically (rest days and holidays excluded).</div>`}
+    <div class="full"><label for="lfR">Reason</label><textarea id="lfR" name="why" rows="2" placeholder="Optional context for HR"></textarea></div>
+    <div style="align-self:end"><button class="pri wide" type="submit">${forAdmin?"Add leave":"Submit request"}</button></div>
+  </form>`;
+}
+
+function policyCard(){
+  return`<div class="card mt">
+    <div class="cardhd"><div><div class="fig">LEAVE POLICY · CONFIGURABLE</div><h3>Rules the whole system uses</h3></div>
+      <button class="sm" data-a="pol">${ico("refresh")} Switch bonus rule</button></div>
+    <div class="pol">
+      <div><div class="fig">ANNUAL ALLOWANCE</div><b>${POLICY.annualAllowanceDays} days</b></div>
+      <div><div class="fig">MONTHLY BONUS</div><b>${POLICY.monthlyBonusDays} days</b></div>
+      <div><div class="fig">LATENESS THRESHOLD</div><b>${POLICY.latenessForfeitMinutes} min</b></div>
+      <div><div class="fig">CONSECUTIVE LATE</div><b>${POLICY.consecutiveLateForfeitDays} days</b></div>
+    </div>
+    <p class="mut" style="font-size:13px;margin:14px 0 0">
+      Current rule: <b style="color:var(--tx)">${POLICY.allowanceIncludesBonus
+        ?"bonus days count INSIDE the "+POLICY.annualAllowanceDays+"-day allowance (hard maximum)"
+        :"bonus days are ADDITIONAL to the "+POLICY.annualAllowanceDays+"-day allowance"}</b>.
+      Every value lives in the single <code>POLICY</code> object at the top of the source — change it there and all pages follow.</p>
+  </div>`;
+}
+
+function admLeave(){
+  const q2=leaves.filter(l=>l.st==="Pending");
+  return head("HR Admin / Leave",`Approvals,<br><em>without the chase.</em>`,"Review requests, see who is out, and manage the leave policy.")
+  +leaveCalCard()+`<div class="grid g4 mt">
+      ${stat("QUEUE","Pending",q2.length)}
+      ${stat("THIS YEAR","Approved",leaves.filter(l=>l.st==="Approved").length)}
+      ${stat("POLICY","Allowance",POLICY.annualAllowanceDays+"<span style='font-size:.5em'> days</span>")}
+      ${stat("POLICY","Monthly bonus",POLICY.monthlyBonusDays+"<span style='font-size:.5em'> days</span>")}
+    </div>
+    <div class="card mt">
+      <div class="cardhd"><div><div class="fig">APPROVAL QUEUE</div><h3>Leave requests</h3></div></div>
+      ${tbl(["Employee","Type","Dates","Days","Status","Remarks",""],
+        leaves.slice().sort((a,b)=>a.st==="Pending"?-1:1).map(l=>[esc(nm(l.e)),esc(l.t),
+          `${shortDate(l.f)} → ${shortDate(l.to)}`,leaveDays(l.f,l.to,l.e),tg(l.st),
+          l.st==="Pending"?`<textarea data-rm="lv${l.id}" rows="1" placeholder="Remarks (optional)" style="min-width:150px"></textarea>`:l.rm?esc(l.rm):'<span class="mut">—</span>',
+          l.st==="Pending"?`<button class="sm pri" data-a="lvap" data-i="${l.id}">Approve</button> <button class="sm dngr" data-a="lvrj" data-i="${l.id}">Reject</button>`:'<span class="mut">Done</span>']),"No leave requests.")}
+    </div>
+    ${policyCard()}
+    <div class="card mt"><h3>File leave for an employee</h3>${leaveForm(1)}</div>`;
+}
+
+function decideLeave(id,ok,fromDay){
+  const l=leaves.find(x=>x.id==id);if(!l||l.st!=="Pending")return;
+  const rmEl=document.querySelector('#md [data-rm="lv'+id+'"]')||document.querySelector('[data-rm="lv'+id+'"]');
+  const rm=rmEl&&rmEl.value?rmEl.value.trim():"";
+  confirmDlg((ok?"Approve":"Reject")+" "+nm(l.e)+"'s "+l.t.toLowerCase()+" leave ("+leaveDays(l.f,l.to,l.e)+" working days)?",()=>{
+    l.st=ok?"Approved":"Rejected";
+    l.rm=rm||(ok?"Approved by HR":"Rejected by HR");
+    audit.unshift({ts:Date.now(),who:"HR Admin",act:"Leave "+l.st.toLowerCase(),
+      det:nm(l.e)+" · "+l.t+" · "+shortDate(l.f)+" → "+shortDate(l.to)});
+    if(l.e===ME)pushNoti("leave","Leave request "+l.st.toLowerCase(),
+      l.t+" · "+shortDate(l.f)+" → "+shortDate(l.to)+" — "+l.rm,"#emp-leave");
+    render();
+    toast("Leave "+l.st.toLowerCase()+" — "+nm(l.e)+" notified");
+    if(fromDay)setTimeout(reopenLeaveDay,0);   // back to the day panel if more requests wait there
+  });
+}
+
+/* ===== button actions on this page ===== */
+HIVE.actions["pol"]=function(i,el,a){
+  const done=msg=>{render();if(msg)toast(msg)};POLICY.allowanceIncludesBonus=!POLICY.allowanceIncludesBonus;ensureBonus(false);render();
+    toast("Rule: bonus is now "+(POLICY.allowanceIncludesBonus?"counted inside":"additional to")+" the "+POLICY.annualAllowanceDays+"-day allowance");return};
+HIVE.actions["lvap"]=function(i,el,a){
+  const done=msg=>{render();if(msg)toast(msg)};decideLeave(i,a==="lvap",!!(el&&el.closest&&el.closest("#md")));return};
+HIVE.actions["lvrj"]=HIVE.actions["lvap"];
+
+/* ===== start ===== */
+HIVE.view=admLeave;
+hiveStart();
+</script>
+</body></html>

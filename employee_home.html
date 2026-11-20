@@ -1,0 +1,101 @@
+<!DOCTYPE html>
+<!--
+  Employee · Home
+  Employee home: clock in/out card, announcements, leave + attendance summaries.
+  Shared pieces (data, sidebar/top bar, payroll + leave engines, helpers) live in js/core.js and css/hive.css.
+-->
+<html lang="en"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Employee · Home · Hive HRIS</title>
+<script>try{var t=localStorage.getItem("hive.theme");if(t)document.documentElement.setAttribute("data-theme",t)}catch(e){}</script>
+<link rel="stylesheet" href="css/hive.css">
+</head>
+<body>
+<div id="root"></div><div id="sc"></div><div id="md"></div><div id="ts"></div>
+
+<script>window.HIVE_PAGE={role:"emp",page:"home"};</script>
+<script src="js/core.js"></script>
+<script>
+"use strict";
+/* ===== Employee · Home — this page's screen ===== */
+/* ---------- EMPLOYEE / HOME ---------- */
+function greet(){const h=new Date().getHours();
+  return h<12?"Good morning":h<18?"Good afternoon":"Good evening"}
+
+function upcoming(){
+  const list=[];
+  holidays.filter(h=>h.d>=Y).forEach(h=>list.push({d:h.d,t:h.n,k:"hol",s:"Non-working holiday"}));
+  events.filter(e=>e.d>=Y).forEach(e=>list.push(e));
+  return list.sort((a,b)=>a.d<b.d?-1:1).slice(0,5);
+}
+
+function empHome(){
+  const me=emp(ME),b=bal(),y=TODAY.getFullYear(),m=TODAY.getMonth(),mf=monthFacts(ME,y,m);
+  const sorted=[...ann].sort((a,c)=>(c.pin?1:0)-(a.pin?1:0)||(a.d<c.d?1:-1));
+  const first=me.n.split(" ")[0];
+  const pendReq=leaves.filter(l=>l.e===ME&&l.st==="Pending").length+fixes.filter(f=>f.e===ME&&f.st==="Pending").length;
+  return `
+  <div class="card flat" style="padding:22px">
+    <div class="cardhd"><div class="fig">ANNOUNCEMENTS</div><a class="mut" style="font-size:12.5px" href="#emp-home">Posted by HR · ${ann.length} total</a></div>
+    <div class="announce">
+      ${sorted.map(a=>`<div class="an${a.pin?" top":""}">${a.pin?'<span class="pin">Pinned</span>':""}
+        <div class="anhd">${priTag(a.pri)}<b>${esc(a.t)}</b><time>${shortDate(a.d)}</time></div>
+        <p>${esc(a.b)}</p></div>`).join("")||`<p class="mut">No announcements yet.</p>`}
+    </div>
+  </div>
+
+  <div class="card mt welcome">
+    <div>
+      <div class="fig">${greet().toUpperCase()}</div>
+      <h1 style="margin:8px 0 6px">${greet()}, <em>${esc(first)}.</em></h1>
+      <p class="mut" style="margin:0;max-width:52ch">Welcome back — here's your day. ${longDate(Y)}. ${
+        pendReq?`You have <b style="color:var(--tx)">${pendReq}</b> request${pendReq>1?"s":""} waiting on HR.`:"You have no pending requests."}</p>
+    </div>
+    <div style="text-align:right">
+      <div class="fig">LEAVE REMAINING</div>
+      <div class="big" style="margin-top:6px">${b.remaining}<span style="font-size:.45em;color:var(--mut)"> days</span></div>
+      <a class="mut" style="font-size:12.5px" href="#emp-leave">Manage leave →</a>
+    </div>
+  </div>
+
+  <div class="grid g2 mt">
+    <div class="card">
+      <div class="cardhd"><div><div class="fig">LEAVE SUMMARY</div><h3>This year</h3></div><a class="mut" style="font-size:12.5px" href="#emp-leave">Details →</a></div>
+      <div class="grid" style="grid-template-columns:repeat(3,1fr);gap:16px 10px">
+        ${mini("Allowance",b.allowance)}${mini("Earned",b.earned)}${mini("Used",b.used)}
+        ${mini("Pending",b.pending)}${mini("Bonus earned","<span style='color:var(--ac)'>+"+b.bonusEarned+"</span>")}${mini("Remaining","<span style='color:var(--ok)'>"+b.remaining+"</span>")}
+      </div>
+    </div>
+    <div class="card">
+      <div class="cardhd"><div><div class="fig">ATTENDANCE SUMMARY</div><h3>${TODAY.toLocaleDateString("en-PH",{month:"long",year:"numeric"})}</h3></div><a class="mut" style="font-size:12.5px" href="#emp-attendance">Details →</a></div>
+      <div class="grid" style="grid-template-columns:repeat(3,1fr);gap:16px 10px">
+        ${mini("Present days",mf.on+mf.late)}${mini("On time",mf.on)}${mini("Late days",mf.late)}
+        ${mini("On leave",`<span style="color:var(--leave)">${mf.leave}</span>`)}${mini("Absences",mf.absent)}${mini("Late minutes",mf.lateMin+"m")}
+      </div>
+    </div>
+  </div>
+
+  <div class="grid g2 mt">
+    <div class="card">
+      <div class="fig">UPCOMING EVENTS</div><h3 style="margin-top:4px">Holidays &amp; reminders</h3>
+      <div style="margin-top:8px">
+        ${upcoming().map(e=>{const d=pdate(e.d);
+          return`<div class="ev"><div class="date"><b>${d.getDate()}</b><span>${d.toLocaleDateString("en-PH",{month:"short"})}</span></div>
+          <div class="txt">${esc(e.t)}<span>${esc(e.s||"")}</span></div>
+          <span class="tag ${e.k==="hol"?"info":e.k==="event"?"wait":""}" style="margin-left:auto">${e.k==="hol"?"Holiday":e.k==="event"?"Company event":"HR reminder"}</span></div>`}).join("")
+          ||`<p class="mut">Nothing coming up.</p>`}
+      </div>
+    </div>
+    <div class="card">
+      <div class="cardhd"><div><div class="fig">RECENT NOTIFICATIONS</div><h3>Latest activity</h3></div>
+        <button class="sm" data-a="readall">Mark all read</button></div>
+      <div>${myNotis().slice(0,5).map(n=>notiItem(n)).join("")||`<p class="mut">All caught up.</p>`}</div>
+    </div>
+  </div>`;
+}
+
+/* ===== start ===== */
+HIVE.view=empHome;
+hiveStart();
+</script>
+</body></html>

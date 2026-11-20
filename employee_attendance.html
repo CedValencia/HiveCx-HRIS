@@ -1,0 +1,514 @@
+<!doctype html>
+<!--
+  Employee · Attendance
+  Employee attendance: monthly calendar, day details, correction requests.
+  Shared pieces (data, sidebar/top bar, payroll + leave engines, helpers) live in js/core.js and css/hive.css.
+-->
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta
+      name="viewport"
+      content="width=device-width, initial-scale=1, viewport-fit=cover"
+    />
+    <title>Employee · Attendance · Hive HRIS</title>
+    <script>
+      try {
+        var t = localStorage.getItem("hive.theme");
+        if (t) document.documentElement.setAttribute("data-theme", t);
+      } catch (e) {}
+    </script>
+    <link rel="stylesheet" href="css/hive.css" />
+  </head>
+  <body>
+    <div id="root"></div>
+    <div id="sc"></div>
+    <div id="md"></div>
+    <div id="ts"></div>
+
+    <script>
+      window.HIVE_PAGE = { role: "emp", page: "attendance" };
+    </script>
+    <script src="js/core.js"></script>
+    <script>
+      "use strict";
+      /* ===== Employee · Attendance — this page's screen ===== */
+      const t5 = () => {
+        const d = new Date();
+        return pad2(d.getHours()) + ":" + pad2(d.getMinutes());
+      };
+
+      const ST_LABEL = {
+        on: "On time",
+        late: "Late",
+        absent: "Absent",
+        rest: "Rest day",
+        hol: "Holiday",
+        inc: "Incomplete",
+        none: "Not yet recorded",
+        future: "Scheduled",
+        leave: "Approved leave",
+      };
+
+      /* ---------- EMPLOYEE / ATTENDANCE ---------- */
+      function shiftCard() {
+        const sh = shiftOf(ME),
+          r = recFor(ME, Y),
+          h = holOn(Y);
+        let status,
+          cls = "wait",
+          inBtn = "",
+          outBtn = "";
+        if (h) {
+          status = "Holiday · " + h.n;
+          cls = "info";
+        } else if (isRest(Y, sh)) {
+          status = "Rest day — no shift scheduled";
+          cls = "";
+        } else if (!r || r.in == null) {
+          status = "Not clocked in yet";
+          cls = "";
+          inBtn = `<button class="pri" data-a="in">Clock in ${ico("cr")}</button>`;
+          outBtn = `<button data-a="out" disabled>Clock out</button>`;
+        } else if (r.out == null) {
+          const late = Math.max(0, mins(r.in) - mins(sh.start));
+          status =
+            late > 0
+              ? `Clocked in · Late by ${late} min`
+              : "Clocked in · On time";
+          cls = late > 0 ? "wait" : "ok";
+          inBtn = `<button data-a="in" disabled>Already clocked in</button>`;
+          outBtn = `<button class="pri" data-a="out">Clock out ${ico("cl")}</button>`;
+        } else {
+          const late = Math.max(0, mins(r.in) - mins(sh.start)),
+            hrs = Math.max(0, mins(r.out) - mins(r.in));
+          status = `Shift complete · ${Math.floor(hrs / 60)}h ${hrs % 60}m worked${late ? ` · ${late} min late` : " · On time"}`;
+          cls = late > 0 ? "wait" : "ok";
+          inBtn = `<button data-a="in" disabled>Clocked in</button>`;
+          outBtn = `<button data-a="out" disabled>Clocked out</button>`;
+        }
+        return `<div class="card">
+    <div class="cardhd"><div><div class="fig">YOUR SHIFT</div><h3>${esc(sh.name)}</h3></div>
+      <span class="tag ${cls}">${esc(status)}</span></div>
+    <div class="clock" id="clk">--:--:--</div>
+    <div class="mut" id="clkdate" style="font-size:13.5px">${longDate(Y)}</div>
+    <div class="shiftgrid">
+      <div><div class="fig">SCHEDULED IN</div><b>${sh.start}</b></div>
+      <div><div class="fig">SCHEDULED OUT</div><b>${sh.end}</b></div>
+      <div><div class="fig">ACTUAL IN</div><b class="${r && r.in ? "" : "miss"}">${r && r.in ? r.in : "—"}</b></div>
+      <div><div class="fig">ACTUAL OUT</div><b class="${r && r.out ? "" : "miss"}">${r && r.out ? r.out : "—"}</b></div>
+    </div>
+    <div class="punch">${inBtn}${outBtn}</div>
+    ${!r && !h && !isRest(Y, sh) ? `<p class="mut" style="font-size:12.5px;margin:12px 0 0">Clock in records your actual arrival. Late arrivals are flagged automatically against your ${sh.start} schedule.</p>` : ""}
+  </div>`;
+      }
+
+      function calGrid() {
+        const first = new Date(calY, calM, 1),
+          last = new Date(calY, calM + 1, 0).getDate();
+        let c = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"]
+          .map((x) => `<div class="h">${x}</div>`)
+          .join("");
+        c += `<div class="h"></div>`.repeat(first.getDay());
+        for (let d = 1; d <= last; d++) {
+          const k = calY + "-" + pad2(calM + 1) + "-" + pad2(d),
+            s = dayState(ME, k);
+          let cls = "day";
+          if (
+            ["on", "late", "absent", "rest", "hol", "inc", "leave"].includes(
+              s.st,
+            )
+          )
+            cls += " " + s.st;
+          if (s.st === "future") cls += " future";
+          if (k === Y) cls += " td";
+          if (selDate === k) cls += " sel";
+          const sub =
+            s.st === "on" || s.st === "late"
+              ? s.in
+              : s.st === "absent"
+                ? "absent"
+                : s.st === "inc"
+                  ? "incomplete"
+                  : s.st === "rest"
+                    ? "rest"
+                    : s.st === "leave"
+                      ? "leave"
+                      : s.st === "hol"
+                        ? holOn(k).n.split(" ")[0].slice(0, 9).toLowerCase()
+                        : s.st === "none"
+                          ? "—"
+                          : "";
+          c += `<button type="button" class="${cls}" data-a="day" data-i="${k}" aria-label="${esc(longDate(k))} — ${ST_LABEL[s.st]}">${d}${sub ? `<small>${sub}</small>` : ""}</button>`;
+        }
+        return c;
+      }
+
+      function calLegend() {
+        const L = [
+          ["var(--ok)", "On time"],
+          ["var(--warn)", "Late"],
+          ["var(--bad)", "Absent"],
+          ["var(--mut)", "Rest day"],
+          ["var(--info)", "Holiday"],
+          ["var(--inc)", "Incomplete"],
+          ["var(--leave)", "Approved leave"],
+        ];
+        return `<div class="leg">${L.map((x) => `<span><i style="background:${x[0]}"></i>${x[1]}</span>`).join("")}</div>`;
+      }
+
+      function calMove(dir) {
+        let m = calM + dir,
+          y = calY;
+        if (m < 0) {
+          m = 11;
+          y--;
+        }
+        if (m > 11) {
+          m = 0;
+          y++;
+        }
+        const key = y + "-" + pad2(m + 1);
+        if (key < POLICY.minMonth || key > POLICY.maxMonth) return;
+        calM = m;
+        calY = y;
+        selDate = null;
+        render();
+      }
+
+      function dayModal(k) {
+        const s = dayState(ME, k),
+          sh = shiftOf(ME),
+          r = recFor(ME, k);
+        const hrs =
+          r && r.in && r.out
+            ? (() => {
+                const t = mins(r.out) - mins(r.in);
+                return t > 0 ? Math.floor(t / 60) + "h " + (t % 60) + "m" : "—";
+              })()
+            : "—";
+        const rows = [
+          ["Date", longDate(k)],
+          [
+            "Attendance status",
+            tg(ST_LABEL[s.st]) +
+              (s.st === "late"
+                ? ` <span class="mut">· ${s.late} min late</span>`
+                : ""),
+          ],
+          ["Scheduled shift", esc(sh.name) + " · " + sh.start + " – " + sh.end],
+          [
+            "Actual clock-in",
+            r && r.in ? `<b>${r.in}</b>` : '<span class="mut">—</span>',
+          ],
+          [
+            "Actual clock-out",
+            r && r.out ? `<b>${r.out}</b>` : '<span class="mut">—</span>',
+          ],
+          ["Total working hours", hrs],
+          [
+            "Late minutes",
+            s.st === "late"
+              ? `<b style="color:var(--warn)">${s.late} min</b>`
+              : '<span class="mut">0</span>',
+          ],
+          [
+            "Notes",
+            r && r.note
+              ? esc(r.note)
+              : s.st === "leave"
+                ? "On approved leave — no clock record"
+                : s.st === "hol"
+                  ? esc(s.hol.n)
+                  : s.st === "rest"
+                    ? "Scheduled rest day"
+                    : '<span class="mut">None</span>',
+          ],
+        ];
+        const linked = fixes.filter((f) => f.e === ME && f.d === k);
+        modal(
+          `<div class="fig">ATTENDANCE DETAIL</div><h3 style="margin:8px 0 14px">${esc(longDate(k))}</h3>
+    <div class="docgrid">${rows.map((x) => `<div class="k">${x[0]}</div><div class="v">${x[1]}</div>`).join("")}</div>
+    ${
+      linked.length
+        ? `<div class="fig" style="margin-top:16px">CORRECTION REQUESTS</div>${linked
+            .map(
+              (f) =>
+                `<div class="ls"><b>${esc(f.ty)}</b> ${tg(f.st)}<br><span class="mut" style="font-size:12.5px">${esc(f.why)}${f.rm ? " · HR: " + esc(f.rm) : ""}</span></div>`,
+            )
+            .join("")}`
+        : ""
+    }
+    ${s.st === "inc" ? `<p class="mut" style="font-size:13px;margin-top:14px">This record is incomplete. Use the correction form below to ask HR to fix it.</p>` : ""}`,
+          { wide: true },
+        );
+      }
+
+      function fixRows(list) {
+        return list.map((f) => [
+          ago(f.sub),
+          shortDate(f.d),
+          esc(f.ty),
+          f.time ? `<b>${f.time}</b>` : '<span class="mut">—</span>',
+          esc(f.why) +
+            (f.file
+              ? `<br><span class="mut" style="font-size:11.5px">📎 ${esc(f.file)}</span>`
+              : ""),
+          tg(f.st),
+          f.rm ? esc(f.rm) : '<span class="mut">—</span>',
+          f.rev ? shortDate(f.rev) : '<span class="mut">—</span>',
+        ]);
+      }
+
+      function empAtt() {
+        const sh = shiftOf(ME),
+          y = calY,
+          m = calM,
+          mf = monthFacts(ME, y, m);
+        const monthName = new Date(y, m, 1).toLocaleDateString("en-PH", {
+          month: "long",
+          year: "numeric",
+        });
+        const canPrev = y + "-" + pad2(m + 1) > POLICY.minMonth,
+          canNext = y + "-" + pad2(m + 1) < POLICY.maxMonth;
+        const mine = fixes
+          .filter((f) => f.e === ME)
+          .sort((a, b) => b.sub - a.sub);
+        return (
+          head(
+            "Employee / Attendance",
+            `Every day,<br><em>on record.</em>`,
+            "Your shift, monthly attendance and correction requests — all in one place.",
+          ) +
+          shiftCard() +
+          `<div class="card mt">
+      <div class="calhd"><div><div class="fig">MONTHLY ATTENDANCE</div><h3>${monthName}</h3></div>
+        <div class="calnav">
+          <button data-a="calp" ${canPrev ? "" : "disabled"} aria-label="Previous month">${ico("cl")}</button>
+          <button data-a="caltoday">Today</button>
+          <button data-a="caln" ${canNext ? "" : "disabled"} aria-label="Next month">${ico("cr")}</button>
+        </div></div>
+      <div class="cal">${calGrid()}</div>${calLegend()}
+      <p class="mut" style="font-size:12.5px;margin:12px 0 0">Click any date to see the full record for that day.</p>
+    </div>
+    <div class="grid g6 mt">
+      ${stat("THIS MONTH", "On time", `<span style="color:var(--ok)">${mf.on}</span>`)}
+      ${stat("THIS MONTH", "Late days", `<span style="color:var(--warn)">${mf.late}</span>`)}
+      ${stat("THIS MONTH", "Absences", `<span style="color:var(--bad)">${mf.absent}</span>`)}
+      ${stat("THIS MONTH", "On leave", `<span style="color:var(--leave)">${mf.leave}</span>`)}
+      ${stat("THIS MONTH", "Late minutes", mf.lateMin + "<span style='font-size:.5em'> min</span>")}
+      ${stat("THIS MONTH", "Incomplete", `<span style="color:var(--inc)">${mf.inc}</span>`)}
+      ${stat("THIS MONTH", "Workdays", mf.total)}
+    </div>
+    <div class="card mt">
+      <div class="cardhd"><div><div class="fig">ATTENDANCE CORRECTION</div><h3>Request a correction</h3></div></div>
+      <p class="mut" style="font-size:13px;margin:0">Forgot to clock in or out? Ask HR to correct the record — attendance can only be changed through an approved request, never edited directly.</p>
+      <form data-f="fix" novalidate>
+        <div><label for="fxD">Date of attendance <span class="req">*</span></label>
+          <input id="fxD" type="date" name="d" max="${Y}" required></div>
+        <div><label for="fxT">Correction type <span class="req">*</span></label>
+          <select id="fxT" name="ty"><option>Forgot to Clock In</option><option>Forgot to Clock Out</option><option>Incorrect Clock In</option><option>Incorrect Clock Out</option></select></div>
+        <div><label for="fxTime">Requested time <span class="req">*</span></label>
+          <input id="fxTime" type="time" name="time" required></div>
+        <div class="full"><label for="fxW">Reason for correction <span class="req">*</span></label>
+          <textarea id="fxW" name="why" rows="2" placeholder="e.g. I left the office in an emergency and forgot to clock out." required></textarea></div>
+        <div><label for="fxF">Attachment (optional)</label>
+          <input id="fxF" type="file" name="file" accept=".pdf,.png,.jpg,.jpeg" style="padding:7px 10px"></div>
+        <div style="align-self:end"><button class="pri wide" type="submit">Submit request</button></div>
+      </form>
+    </div>
+    <div class="mt">
+      <div class="fig" style="margin-bottom:8px">CORRECTION HISTORY</div>
+      ${tbl(
+        [
+          "Submitted",
+          "Attendance date",
+          "Type",
+          "Requested",
+          "Reason",
+          "Status",
+          "HR remarks",
+          "Reviewed",
+        ],
+        fixRows(mine),
+        "You haven't filed any corrections yet.",
+      )}
+    </div>`
+        );
+      }
+
+      function clockIn() {
+        const sh = shiftOf(ME);
+        if (holOn(Y)) {
+          toast("Today is a holiday — no clock-in needed", true);
+          return;
+        }
+        if (isRest(Y, sh)) {
+          toast("Today is your rest day — no shift scheduled", true);
+          return;
+        }
+        if (onLeave(ME, Y)) {
+          toast("You're on approved leave today — no clock-in needed", true);
+          return;
+        }
+        const r = recFor(ME, Y);
+        if (r && r.in) {
+          toast("You already clocked in at " + r.in, true);
+          return;
+        }
+        const t = t5();
+        const rec = r || { e: ME, d: Y, in: null, out: null, note: "" };
+        if (!r) att.push(rec);
+        rec.in = t;
+        const late = Math.max(0, mins(t) - mins(sh.start));
+        render();
+        toast(
+          late > 0
+            ? "Clocked in at " + t + " · Late by " + late + " min"
+            : "Clocked in at " + t + " · On time",
+          late > 0,
+        );
+      }
+
+      function clockOut() {
+        const r = recFor(ME, Y);
+        if (!r || !r.in) {
+          toast("Clock in first — you can't clock out yet", true);
+          return;
+        }
+        if (r.out) {
+          toast("You already clocked out at " + r.out, true);
+          return;
+        }
+        const t = t5();
+        if (mins(t) < mins(r.in)) {
+          toast("Clock-out can't be before your clock-in (" + r.in + ")", true);
+          return;
+        }
+        r.out = t;
+        const worked = mins(t) - mins(r.in);
+        render();
+        toast(
+          "Clocked out at " +
+            t +
+            " · " +
+            Math.floor(worked / 60) +
+            "h " +
+            (worked % 60) +
+            "m worked",
+        );
+      }
+
+      /* ===== button actions on this page ===== */
+      HIVE.actions["in"] = function (i, el, a) {
+        const done = (msg) => {
+          render();
+          if (msg) toast(msg);
+        };
+        clockIn();
+        return;
+      };
+      HIVE.actions["out"] = function (i, el, a) {
+        const done = (msg) => {
+          render();
+          if (msg) toast(msg);
+        };
+        clockOut();
+        return;
+      };
+      HIVE.actions["calp"] = function (i, el, a) {
+        const done = (msg) => {
+          render();
+          if (msg) toast(msg);
+        };
+        calMove(-1);
+        return;
+      };
+      HIVE.actions["caln"] = function (i, el, a) {
+        const done = (msg) => {
+          render();
+          if (msg) toast(msg);
+        };
+        calMove(1);
+        return;
+      };
+      HIVE.actions["caltoday"] = function (i, el, a) {
+        const done = (msg) => {
+          render();
+          if (msg) toast(msg);
+        };
+        const k = Y.slice(0, 7);
+        if (k >= POLICY.minMonth && k <= POLICY.maxMonth) {
+          calY = TODAY.getFullYear();
+          calM = TODAY.getMonth();
+          selDate = null;
+          render();
+        } else toast("Attendance data starts in June 2026", true);
+        return;
+      };
+      HIVE.actions["day"] = function (i, el, a) {
+        const done = (msg) => {
+          render();
+          if (msg) toast(msg);
+        };
+        selDate = i;
+        render();
+        dayModal(i);
+        return;
+      };
+
+      /* ===== forms on this page ===== */
+      HIVE.forms["fix"] = function (form, f, btn, ev, k) {
+        if (!f.d)
+          return errBox(form, "Choose the date of the attendance record.");
+        if (f.d > Y)
+          return errBox(form, "The attendance date can't be in the future.");
+        if (f.d < POLICY.dataStart)
+          return errBox(
+            form,
+            "Attendance records start from " +
+              shortDate(POLICY.dataStart) +
+              ".",
+          );
+        if (!f.time) return errBox(form, "Enter the requested time.");
+        if (!f.why || String(f.why).trim().length < 5)
+          return errBox(
+            form,
+            "Please give a short reason (at least 5 characters).",
+          );
+        const dup = fixes.find(
+          (x) => x.e === ME && x.d === f.d && x.st === "Pending",
+        );
+        if (dup)
+          return errBox(
+            form,
+            "You already have a pending correction for " +
+              shortDate(f.d) +
+              " — wait for HR to review it.",
+          );
+        busy(btn, "Submitting…", 600, () => {
+          fixes.unshift({
+            id: Date.now(),
+            e: ME,
+            d: f.d,
+            ty: f.ty,
+            time: f.time,
+            why: String(f.why).trim(),
+            file: fname(form),
+            st: "Pending",
+            sub: Date.now(),
+            rm: "",
+            rev: null,
+          });
+          render();
+          toast("Correction sent to HR — status: Pending");
+        });
+        return;
+      };
+
+      /* ===== start ===== */
+      HIVE.view = empAtt;
+      hiveStart();
+    </script>
+  </body>
+</html>

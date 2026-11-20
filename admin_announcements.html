@@ -1,0 +1,104 @@
+<!doctype html>
+<!--
+  HR Admin · Announcements
+  HR admin announcements: post and pin announcements.
+  Shared pieces (data, sidebar/top bar, payroll + leave engines, helpers) live in js/core.js and css/hive.css.
+-->
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta
+      name="viewport"
+      content="width=device-width, initial-scale=1, viewport-fit=cover"
+    />
+    <title>HR Admin · Announcements · Hive HRIS</title>
+    <script>
+      try {
+        var t = localStorage.getItem("hive.theme");
+        if (t) document.documentElement.setAttribute("data-theme", t);
+      } catch (e) {}
+    </script>
+    <link rel="stylesheet" href="css/hive.css" />
+  </head>
+  <body>
+    <div id="root"></div>
+    <div id="sc"></div>
+    <div id="md"></div>
+    <div id="ts"></div>
+
+    <script>
+      window.HIVE_PAGE = { role: "adm", page: "announcements" };
+    </script>
+    <script src="js/core.js"></script>
+    <script>
+      "use strict";
+      /* ===== HR Admin · Announcements — this page's screen ===== */
+      function admAnn() {
+        const sorted = [...ann].sort(
+          (a, b) => (b.pin ? 1 : 0) - (a.pin ? 1 : 0) || (a.d < b.d ? 1 : -1),
+        );
+        return (
+          head(
+            "HR Admin / Announcements",
+            `Tell everyone,<br><em>once.</em>`,
+            "Posts appear at the top of every employee’s home screen — pin urgent ones so they can't be missed.",
+          ) +
+          `<div class="card"><h3>New announcement</h3>
+      <form data-f="ann" novalidate>
+        <div><label for="anT">Title <span class="req">*</span></label><input id="anT" name="t" required placeholder="e.g. Office closed Nov 30"></div>
+        <div><label for="anP">Priority</label><select id="anP" name="pri"><option>Normal</option><option>High</option><option>Urgent</option></select></div>
+        <div class="full"><label for="anB">Message <span class="req">*</span></label><textarea id="anB" name="b" rows="3" required placeholder="What should everyone know?"></textarea></div>
+        <div class="full"><label class="chk"><input type="checkbox" name="pin"> Pin to the top of the home page</label></div>
+        <div><button class="pri" type="submit">Post announcement</button></div>
+      </form></div>
+    <div class="card mt">
+      <div class="cardhd"><div><div class="fig">POSTED</div><h3>${ann.length} announcements</h3></div></div>
+      <div class="announce">${
+        sorted
+          .map(
+            (
+              a,
+            ) => `<div class="an${a.pin ? " top" : ""}">${a.pin ? '<span class="pin">Pinned</span>' : ""}
+        <div class="anhd">${priTag(a.pri)}<b>${esc(a.t)}</b><time>${shortDate(a.d)}</time>
+          <span class="mut" style="font-size:12px;margin-left:auto">${esc(a.by || "HR")}</span></div>
+        <p>${esc(a.b)}</p></div>`,
+          )
+          .join("") || `<p class="mut">Nothing posted yet.</p>`
+      }</div>
+    </div>`
+        );
+      }
+
+      /* ===== forms on this page ===== */
+      HIVE.forms["ann"] = function (form, f, btn, ev, k) {
+        if (!String(f.t || "").trim()) return errBox(form, "Enter a title.");
+        if (!String(f.b || "").trim())
+          return errBox(form, "Write the announcement message.");
+        busy(btn, "Posting…", 500, () => {
+          ann.unshift({
+            id: Date.now(),
+            t: String(f.t).trim(),
+            b: String(f.b).trim(),
+            d: Y,
+            pri: f.pri || "Normal",
+            pin: !!f.pin,
+            by: "HR Admin",
+          });
+          pushNoti(
+            "announcement",
+            "New announcement: " + String(f.t).trim(),
+            String(f.b).trim().slice(0, 90),
+            "#emp-home",
+          );
+          render();
+          toast("Announcement posted to everyone's home page");
+        });
+        return;
+      };
+
+      /* ===== start ===== */
+      HIVE.view = admAnn;
+      hiveStart();
+    </script>
+  </body>
+</html>

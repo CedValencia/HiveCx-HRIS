@@ -1,0 +1,146 @@
+<!DOCTYPE html>
+<!--
+  Employee · My Profile
+  Employee profile: personal + employment info, edit contact details, password.
+  Shared pieces (data, sidebar/top bar, payroll + leave engines, helpers) live in js/core.js and css/hive.css.
+-->
+<html lang="en"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Employee · My Profile · Hive HRIS</title>
+<script>try{var t=localStorage.getItem("hive.theme");if(t)document.documentElement.setAttribute("data-theme",t)}catch(e){}</script>
+<link rel="stylesheet" href="css/hive.css">
+</head>
+<body>
+<div id="root"></div><div id="sc"></div><div id="md"></div><div id="ts"></div>
+
+<script>window.HIVE_PAGE={role:"emp",page:"profile"};</script>
+<script src="js/core.js"></script>
+<script>
+"use strict";
+/* ===== Employee · My Profile — this page's screen ===== */
+/* ---------- EMPLOYEE / MY PROFILE ---------- */
+function fld(label,val,locked){
+  return`<div class="ls"><span class="mut">${esc(label)}${locked?" "+ico("lock"):""}</span><br>${val}</div>`}
+
+function empProfile(){
+  const e=emp(ME);
+  return head("Employee / My Profile",`Your details,<br><em>one record.</em>`,"Update your contact details yourself — job details are managed by HR.")
+  +`<div class="card">
+      <div class="welcome">
+        <div style="display:flex;gap:16px;align-items:center">
+          <span class="av lg">${ini(e.n)}</span>
+          <div><h2 style="font-size:24px">${esc(e.n)}</h2>
+            <div class="mut" style="font-size:13.5px">${esc(e.id)} · ${esc(e.r)} · ${esc(e.d)}</div>
+            <div style="margin-top:8px;display:flex;gap:6px;flex-wrap:wrap">
+              <span class="tag ok">${esc(e.st)}</span><span class="tag">${esc(shiftOf(ME).name)}</span>
+              <span class="tag ${e.twofa?"ok":"wait"}">${e.twofa?"2-step verification on":"2-step verification off"}</span></div></div>
+        </div>
+        <button class="pri" data-a="editprof">${ico("edit")} Edit contact details</button>
+      </div>
+    </div>
+    <div class="grid g2 mt">
+      <div class="card">
+        <div class="fig">PERSONAL INFORMATION</div><h3 style="margin-top:4px">About you</h3>
+        ${fld("Full name",esc(e.n),1)}
+        ${fld("Employee ID",esc(e.id),1)}
+        ${fld("Birthday",e.b?shortDate("2000-"+e.b):"—",1)}
+        ${fld("Contact number",esc(e.ph||"—"))}
+        ${fld("Address",esc(e.addr||"—"))}
+        ${fld("Emergency contact",esc(e.ec||"—"))}
+      </div>
+      <div class="card">
+        <div class="fig">EMPLOYMENT INFORMATION</div><h3 style="margin-top:4px">Your role</h3>
+        ${fld("Position",esc(e.r),1)}
+        ${fld("Department",esc(e.d),1)}
+        ${fld("Date hired",shortDate(e.j),1)}
+        ${fld("Employment status",esc(e.st),1)}
+        ${fld("Assigned shift",esc(shiftOf(ME).name)+" · "+shiftOf(ME).start+"–"+shiftOf(ME).end,1)}
+        ${fld("Monthly salary",PHP(e.s),1)}
+        <p class="mut" style="font-size:12px;margin:12px 0 0">${ico("lock")} Fields marked with a lock are changed by HR/Admin only.</p>
+      </div>
+    </div>
+    <div class="grid g2 mt">
+      <div class="card">
+        <div class="fig">ACCOUNT INFORMATION</div><h3 style="margin-top:4px">Sign-in</h3>
+        ${fld("Email address",esc(e.email))}
+        ${fld("Username",esc(e.user||e.id))}
+        <div class="ls"><span class="mut">Last sign-in</span><br>${new Date().toLocaleString("en-PH",{month:"short",day:"numeric",hour:"2-digit",minute:"2-digit"})}</div>
+        <div class="ls"><span class="mut">Password last changed</span><br><span id="pwChanged">${e.pwAt?new Date(e.pwAt).toLocaleDateString("en-PH",{month:"short",day:"numeric",year:"numeric"}):"Prototype default"}</span></div>
+        <div class="row" style="margin:14px 0 0">
+          <button class="sm" data-a="2fa">${e.twofa?"Disable":"Enable"} 2-step verification</button>
+          <button class="sm dngr" data-a="signoutall">Sign out other sessions</button>
+        </div>
+      </div>
+      <div class="card">
+        <div class="fig">ACCOUNT SECURITY</div><h3 style="margin-top:4px">Change password</h3>
+        <form data-f="pw" novalidate>
+          <div class="full"><label for="pwC">Current password <span class="req">*</span></label>
+            <div class="pw"><input id="pwC" name="cur" type="password" autocomplete="current-password" required>
+              <button type="button" data-a="vis" data-i="pwC">Show</button></div></div>
+          <div><label for="pwN">New password <span class="req">*</span></label>
+            <div class="pw"><input id="pwN" name="new" type="password" autocomplete="new-password" required>
+              <button type="button" data-a="vis" data-i="pwN">Show</button></div></div>
+          <div><label for="pwR">Confirm new password <span class="req">*</span></label>
+            <div class="pw"><input id="pwR" name="rep" type="password" autocomplete="new-password" required>
+              <button type="button" data-a="vis" data-i="pwR">Show</button></div></div>
+          <div class="hintbox">Use at least 8 characters, mixing letters and numbers.</div>
+          <div class="full"><button class="pri wide" type="submit">Update password</button></div>
+        </form>
+      </div>
+    </div>`;
+}
+
+function editProfView(){
+  const e=emp(ME);
+  modal(`<div class="fig">EDIT CONTACT DETAILS</div><h3 style="margin:8px 0 4px">Update your information</h3>
+    <p class="mut" style="font-size:13px;margin:0">These fields are editable by you. Name, position, department, salary and shift are managed by HR.</p>
+    <form data-f="prof" novalidate>
+      <div><label for="epP">Contact number <span class="req">*</span></label><input id="epP" name="ph" value="${esc(e.ph)}" required></div>
+      <div><label for="epE">Email address <span class="req">*</span></label><input id="epE" name="email" type="email" value="${esc(e.email)}" required></div>
+      <div class="full"><label for="epA">Address <span class="req">*</span></label><input id="epA" name="addr" value="${esc(e.addr)}" required></div>
+      <div class="full"><label for="epC">Emergency contact <span class="req">*</span></label><input id="epC" name="ec" value="${esc(e.ec)}" placeholder="Name · phone number" required></div>
+      <div class="full"><button class="pri wide" type="submit">Save changes</button></div>
+    </form>`,{wide:true});
+}
+
+/* ===== button actions on this page ===== */
+HIVE.actions["editprof"]=function(i,el,a){
+  const done=msg=>{render();if(msg)toast(msg)};editProfView();return};
+HIVE.actions["2fa"]=function(i,el,a){
+  const done=msg=>{render();if(msg)toast(msg)};const e=emp(ME);e.twofa=!e.twofa;render();toast("2-step verification "+(e.twofa?"enabled":"disabled"));return};
+HIVE.actions["signoutall"]=function(i,el,a){
+  const done=msg=>{render();if(msg)toast(msg)};confirmDlg("Sign out all other sessions and devices?",()=>toast("Other sessions signed out (demo)"));return};
+
+/* ===== forms on this page ===== */
+HIVE.forms["pw"]=function(form,f,btn,ev,k){
+      const me=emp(ME);
+      if(!f.cur)return errBox(form,"Enter your current password.");
+      if(f.cur!==me.pass)return errBox(form,"Your current password is incorrect.");
+      if(!f.new||String(f.new).length<8)return errBox(form,"The new password must be at least 8 characters.");
+      if(!/[a-zA-Z]/.test(f.new)||!/\d/.test(f.new))return errBox(form,"Include at least one letter and one number.");
+      if(f.new!==f.rep)return errBox(form,"The new passwords don't match.");
+      if(f.new===f.cur)return errBox(form,"Choose a password different from your current one.");
+      busy(btn,"Updating…",600,()=>{
+        me.pass=String(f.new);me.pwAt=Date.now();render();toast("Password updated successfully");
+      });
+      return;
+    };
+HIVE.forms["prof"]=function(form,f,btn,ev,k){
+      if(!String(f.ph||"").trim())return errBox(form,"Contact number is required.");
+      if(!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(String(f.email||"").trim()))return errBox(form,"Enter a valid email address.");
+      if(!String(f.addr||"").trim())return errBox(form,"Address is required.");
+      if(!String(f.ec||"").trim())return errBox(form,"Emergency contact is required.");
+      busy(btn,"Saving…",500,()=>{
+        const me=emp(ME);
+        me.ph=String(f.ph).trim();me.email=String(f.email).trim();
+        me.addr=String(f.addr).trim();me.ec=String(f.ec).trim();
+        closeModal();render();toast("Contact details updated");
+      });
+      return;
+    };
+
+/* ===== start ===== */
+HIVE.view=empProfile;
+hiveStart();
+</script>
+</body></html>

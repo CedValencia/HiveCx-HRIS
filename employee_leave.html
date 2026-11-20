@@ -1,0 +1,173 @@
+<!doctype html>
+<!--
+  Employee · Leave
+  Employee leave: balances, monthly attendance bonus, leave requests.
+  Shared pieces (data, sidebar/top bar, payroll + leave engines, helpers) live in js/core.js and css/hive.css.
+-->
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta
+      name="viewport"
+      content="width=device-width, initial-scale=1, viewport-fit=cover"
+    />
+    <title>Employee · Leave · Hive HRIS</title>
+    <script>
+      try {
+        var t = localStorage.getItem("hive.theme");
+        if (t) document.documentElement.setAttribute("data-theme", t);
+      } catch (e) {}
+    </script>
+    <link rel="stylesheet" href="css/hive.css" />
+  </head>
+  <body>
+    <script src="js/hive-loader.js"></script>
+    <div id="root"></div>
+    <div id="sc"></div>
+    <div id="md"></div>
+    <div id="ts"></div>
+
+    <script>
+      window.HIVE_PAGE = { role: "emp", page: "leave" };
+    </script>
+    <script src="js/core.js"></script>
+    <script src="js/leave-day.js"></script>
+    <script>
+      "use strict";
+      /* ===== Employee · Leave — this page's screen ===== */
+      /* ---------- EMPLOYEE / LEAVE ---------- */
+      function monthLabel(ym) {
+        const [y, m] = ym.split("-").map(Number);
+        return new Date(y, m - 1, 1).toLocaleDateString("en-PH", {
+          month: "long",
+          year: "numeric",
+        });
+      }
+
+      function empLeave() {
+        const b = bal(),
+          me = emp(ME);
+        const mine = leaves
+          .filter((l) => l.e === ME)
+          .sort((a, c) => (a.f < c.f ? 1 : -1));
+        const rows = bonusRows(ME).slice(0, 7);
+        return (
+          head(
+            "Employee / Leave",
+            `Time off,<br><em>made simple.</em>`,
+            "Your annual allowance, the monthly attendance bonus, and every request you've filed.",
+          ) +
+          leaveCalCard(ME) +
+          `<div class="card mt">
+      <div class="cardhd"><div><div class="fig">LEAVE BALANCE · ${TODAY.getFullYear()}</div><h3>Where you stand</h3></div>
+        <span class="tag ${b.remaining > 3 ? "ok" : "wait"}">${b.remaining} days available</span></div>
+      <div class="grid" style="grid-template-columns:repeat(auto-fit,minmax(130px,1fr));gap:18px 12px">
+        ${mini("Annual allowance", b.allowance, "days / year")}
+        ${mini("Earned so far", b.earned, "accrued monthly")}
+        ${mini("Bonus earned", "<span style='color:var(--ac)'>+" + b.bonusEarned + "</span>", "from attendance")}
+        ${mini("Used", b.used, "approved leave")}
+        ${mini("Pending", b.pending, "awaiting approval")}
+        ${mini("Remaining", "<span style='color:var(--ok)'>" + b.remaining + "</span>", "bookable now")}
+        ${mini("Bonus forfeited", `<span style="color:var(--bad)">${b.forfeited}</span>`, "voided months")}
+      </div>
+      <p class="mut" style="font-size:12.5px;margin:16px 0 0">
+        ${
+          b.includesBonus
+            ? "Rule in use: <b style='color:var(--tx)'>bonus days count inside</b> your " +
+              b.allowance +
+              "-day allowance (total capped at " +
+              b.allowance +
+              " days)."
+            : "Rule in use: <b style='color:var(--tx)'>bonus days are additional</b> to your " +
+              b.allowance +
+              "-day allowance."
+        }
+        Rest days and holidays are not deducted from your balance.</p>
+    </div>
+
+    <div class="card mt">
+      <div class="cardhd"><div><div class="fig">APPLY FOR LEAVE</div><h3>New leave request</h3></div>
+        <span class="mut" style="font-size:13px">Available: <b style="color:var(--tx)">${b.remaining} days</b></span></div>
+      <form data-f="leave" novalidate>
+        <div><label for="lvT">Leave type <span class="req">*</span></label>
+          <select id="lvT" name="t"><option>Vacation</option><option>Sick</option><option>Emergency</option></select></div>
+        <div><label for="lvF">Start date <span class="req">*</span></label>
+          <input id="lvF" type="date" name="f" min="${Y}" required data-live></div>
+        <div><label for="lvTo">End date <span class="req">*</span></label>
+          <input id="lvTo" type="date" name="to" min="${Y}" required data-live></div>
+        <div class="hintbox" id="lvDays">Pick your dates — the number of leave days is calculated automatically (rest days and holidays are excluded).</div>
+        <div class="full"><label for="lvR">Reason</label>
+          <textarea id="lvR" name="why" rows="2" placeholder="Optional context for HR"></textarea></div>
+        <div><label for="lvF2">Attachment (optional)</label>
+          <input id="lvF2" type="file" name="file" accept=".pdf,.png,.jpg,.jpeg" style="padding:7px 10px"></div>
+        <div style="align-self:end"><button class="pri wide" type="submit">Submit request</button></div>
+      </form>
+    </div>
+
+    <div class="mt">
+      <div class="fig" style="margin-bottom:8px">LEAVE HISTORY</div>
+      ${tbl(
+        ["Leave type", "Dates", "Days", "Submitted", "Status", "Remarks"],
+        mine.map((l) => [
+          esc(l.t),
+          `${shortDate(l.f)} → ${shortDate(l.to)}`,
+          leaveDays(l.f, l.to, ME),
+          ago(l.sub),
+          tg(l.st),
+          l.st === "Pending"
+            ? l.why
+              ? esc(l.why) + ' <span class="mut">· awaiting HR</span>'
+              : '<span class="mut">—</span>'
+            : l.rm
+              ? esc(l.rm)
+              : '<span class="mut">—</span>',
+        ]),
+        "No leave requests yet.",
+      )}
+    </div>
+
+    <div class="card mt">
+      <div class="cardhd"><div><div class="fig">MONTHLY ATTENDANCE BONUS</div><h3>How you earn +${POLICY.monthlyBonusDays} days</h3></div></div>
+      <div class="grid g3" style="gap:10px">
+        <div class="hintbox" style="margin:0">${ico("check")} Complete attendance for the whole month</div>
+        <div class="hintbox" style="margin:0">${ico("check")} Less than ${POLICY.latenessForfeitMinutes} late minutes in total</div>
+        <div class="hintbox" style="margin:0">${ico("check")} No ${POLICY.consecutiveLateForfeitDays} consecutive late days</div>
+        <div class="hintbox" style="margin:0;color:var(--bad)">${ico("x")} ${POLICY.latenessForfeitMinutes}+ late minutes voids the bonus</div>
+        <div class="hintbox" style="margin:0;color:var(--bad)">${ico("x")} ${POLICY.consecutiveLateForfeitDays} consecutive late days voids it too</div>
+        <div class="hintbox" style="margin:0">${ico("clock")} Evaluated automatically every month end</div>
+      </div>
+      <div class="fig" style="margin:20px 0 8px">BONUS HISTORY</div>
+      ${tbl(
+        [
+          "Month",
+          "Late minutes",
+          "Late days",
+          "Max consecutive",
+          "Completeness",
+          "Status",
+          "Bonus",
+        ],
+        rows.map((r) => [
+          monthLabel(r.ym),
+          `<span style="color:${r.lateMin >= POLICY.latenessForfeitMinutes ? "var(--bad)" : r.lateMin ? "var(--warn)" : "var(--mut)"}">${r.lateMin} min</span>`,
+          r.late,
+          r.maxConsec,
+          `${r.resolved}/${r.total}${r.complete ? "" : ' <span style="color:var(--inc)">· incomplete</span>'}`,
+          `${tg(r.status)}<br><span class="mut" style="font-size:11.5px">${esc(r.reason)}</span>`,
+          r.amount
+            ? `<b style="color:var(--ac)">+${r.amount} day</b>`
+            : '<span class="mut">—</span>',
+        ]),
+        "No evaluations yet.",
+      )}
+      <p class="mut" style="font-size:12.5px;margin:14px 0 0">Evaluations run automatically after each month ends — nothing is assigned by hand. Incomplete or disputed months stay <b>Pending Evaluation</b> until the records are resolved.</p>
+    </div>`
+        );
+      }
+
+      /* ===== start ===== */
+      HIVE.view = empLeave;
+      hiveStart();
+    </script>
+  </body>
+</html>

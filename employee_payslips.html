@@ -1,0 +1,88 @@
+<!doctype html>
+<!--
+  Employee · Payslips
+  Employee payslips: pay periods, payslip view, print / save as PDF.
+  Shared pieces (data, sidebar/top bar, payroll + leave engines, helpers) live in js/core.js and css/hive.css.
+-->
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta
+      name="viewport"
+      content="width=device-width, initial-scale=1, viewport-fit=cover"
+    />
+    <title>Employee · Payslips · Hive HRIS</title>
+    <script>
+      try {
+        var t = localStorage.getItem("hive.theme");
+        if (t) document.documentElement.setAttribute("data-theme", t);
+      } catch (e) {}
+    </script>
+    <link rel="stylesheet" href="css/hive.css" />
+  </head>
+  <body>
+    <div id="root"></div>
+    <div id="sc"></div>
+    <div id="md"></div>
+    <div id="ts"></div>
+
+    <script>
+      window.HIVE_PAGE = { role: "emp", page: "payslips" };
+    </script>
+    <script src="js/core.js"></script>
+    <script>
+      "use strict";
+      /* ===== Employee · Payslips — this page's screen ===== */
+      function empSlips() {
+        const list = periods(),
+          x = pay(emp(ME), list[0].label);
+        return (
+          head(
+            "Employee / Payslips",
+            `Your pay,<br><em>clearly broken down.</em>`,
+            "Select a pay period to see the full breakdown — earnings, contributions, tax and net pay.",
+          ) +
+          `<div class="grid g4">
+      ${stat("NEXT PAYDAY", "Nov 30, 2026", `<span style="font-size:26px">${PHP(x.net)}</span>`, "estimated net · semi-monthly")}
+      ${stat("THIS PERIOD", "Gross pay", `<span style="font-size:26px">${PHP(x.g)}</span>`, "basic + allowances + overtime")}
+      ${stat("THIS PERIOD", "Deductions", `<span style="font-size:26px">${PHP(x.ded)}</span>`, "SSS · PhilHealth · Pag-IBIG · tax")}
+      ${stat("YTD", "Payslips", list.filter((p) => p.st !== "Upcoming").length, "available to view")}
+    </div>
+    <div class="mt">${tbl(
+      ["Pay period", "Gross pay", "Net pay", "Status", ""],
+      list.map((p) => [
+        esc(p.label),
+        PHP(pay(emp(ME), p.label).g),
+        `<b>${PHP(pay(emp(ME), p.label).net)}</b>`,
+        tg(p.st),
+        p.st !== "Upcoming"
+          ? `<button class="sm" data-a="slip" data-i="${ME}|${esc(p.label)}">View</button> <button class="sm" data-a="printslip" data-i="${ME}|${esc(p.label)}">PDF</button>`
+          : '<span class="mut">—</span>',
+      ]),
+      "No payslips yet.",
+    )}</div>
+    <p class="mut" style="font-size:12.5px;margin-top:14px">You can only access your own payslips. Choose <b>PDF</b> to print or save a copy — pick “Save as PDF” in the print dialog.</p>`
+        );
+      }
+
+      /* ===== button actions on this page ===== */
+      HIVE.actions["printslip"] = function (i, el, a) {
+        const done = (msg) => {
+          render();
+          if (msg) toast(msg);
+        };
+        const p = i.split("|");
+        modal(slipDoc(p[0], p.slice(1).join("|")), {
+          wide: true,
+          noClose: true,
+        });
+        printSlip();
+        return;
+      };
+
+      /* ===== start ===== */
+      HIVE.view = empSlips;
+      hiveStart();
+    </script>
+  </body>
+</html>

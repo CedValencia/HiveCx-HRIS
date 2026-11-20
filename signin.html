@@ -1,0 +1,218 @@
+<!doctype html>
+<!--
+  Sign in
+  Sign-in screen, demo accounts, login + forgot-password forms.
+  Shared pieces (data, sidebar/top bar, payroll + leave engines, helpers) live in js/core.js and css/hive.css.
+-->
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta
+      name="viewport"
+      content="width=device-width, initial-scale=1, viewport-fit=cover"
+    />
+    <title>Sign in · Hive HRIS</title>
+    <script>
+      try {
+        var t = localStorage.getItem("hive.theme");
+        if (t) document.documentElement.setAttribute("data-theme", t);
+      } catch (e) {}
+    </script>
+    <link rel="stylesheet" href="css/hive.css" />
+  </head>
+  <body>
+    <div id="root"></div>
+    <div id="sc"></div>
+    <div id="md"></div>
+    <div id="ts"></div>
+
+    <script>
+      window.HIVE_PAGE = { role: null, page: "signin" };
+    </script>
+    <script src="js/hive-loader.js"></script>
+    <script>
+      window.HIVE_PAGE = { role: null, page: "signin" };
+    </script>
+    <script src="js/core.js"></script>
+
+    <script>
+      "use strict";
+      /* ===== Sign in — this page's screen ===== */
+      /* accounts for the demo login */
+      const ACCOUNTS = [
+        {
+          user: "maria.santos@hive.com",
+          pass: "hive123",
+          role: "emp",
+          id: "HV-001",
+          label: "Employee",
+          sub: "Maria Santos · HV-001",
+        },
+        {
+          user: "admin@hivehris.com",
+          pass: "admin123",
+          role: "adm",
+          id: "admin",
+          label: "HR Admin",
+          sub: "Full HR access",
+        },
+      ];
+
+      function loginView() {
+        return `<div class="login">
+  <div class="login__art">
+    <div class="fig">HIVE HRIS · HUMAN RESOURCE INFORMATION SYSTEM</div>
+    <h1>People work,<br><em>moving forward.</em></h1>
+    <p class="mut" style="max-width:46ch;margin:0">Attendance, leave, payslips and people — one connected HR platform for the whole team.</p>
+    <ul>
+      <li>${ico("check")} Live attendance with clock in / clock out</li>
+      <li>${ico("check")} Automatic leave balances &amp; monthly attendance bonus</li>
+      <li>${ico("check")} Payslips, announcements and notifications</li>
+    </ul>
+    ${hexArt()}
+  </div>
+  <div class="login__form">
+    <div class="logo"><i class="hxi"></i><span>Hive HRIS<small>Sign in to continue</small></span></div>
+    <form data-f="login" novalidate>
+      <div class="full"><label for="lgU">Email or username <span class="req">*</span></label>
+        <input id="lgU" name="u" autocomplete="username" placeholder="username or email" required></div>
+      <div class="full"><label for="lgP">Password <span class="req">*</span></label>
+        <div class="pw"><input id="lgP" name="p" type="password" autocomplete="current-password" placeholder="Your password" required>
+        <button type="button" data-a="vis" data-i="lgP">Show</button></div></div>
+      <div class="full row between" style="margin:0">
+        <label class="chk"><input type="checkbox" name="rem" checked> Keep me signed in</label>
+        <button type="button" class="lnk" data-a="forgot">Forgot password?</button>
+      </div>
+      <div class="full"><button class="pri wide" type="submit">Sign in</button></div>
+      <div class="hintbox">First time here? Sign in with the username and temporary password HR gave you — you'll finish your profile and choose your own password next.</div>
+    </form>
+    <div class="demo">
+      <div class="fig">DEMO ACCOUNTS — CLICK TO FILL</div>
+      <button type="button" data-a="demo" data-i="0"><b>Employee · Maria Santos</b><span>maria.santos@hive.com · hive123</span></button>
+      <button type="button" data-a="demo" data-i="1"><b>HR Admin · Full access</b><span>admin@hivehris.com · admin123</span></button>
+      <p class="mut" style="font-size:12px;margin:8px 0 0">Sample data — saved in this browser so every page shares it. <button type="button" class="lnk" data-a="resetdemo">Reset demo data</button></p>
+    </div>
+  </div>
+</div>`;
+      }
+
+      function auth(u, p) {
+        /* re-read the directory first: HR may have created this account after this tab was opened */
+        try {
+          const o = JSON.parse(localStorage.getItem(STORE) || "{}");
+          if (Array.isArray(o.emps)) emps = o.emps;
+        } catch (e) {}
+        const key = String(u || "")
+          .trim()
+          .toLowerCase();
+        const adm = ACCOUNTS.find(
+          (x) =>
+            x.role === "adm" &&
+            (x.user.toLowerCase() === key || x.id.toLowerCase() === key),
+        );
+        if (adm) return adm.pass === p ? adm : null;
+        /* employees: accounts created by HR (and the sample team) — sign in by username, email or employee ID */
+        const e = emps.find((x) =>
+          [x.user, x.email, x.id].some(
+            (v) => v && String(v).toLowerCase() === key,
+          ),
+        );
+        if (!e || e.pass !== p) return null;
+        return { role: "emp", id: e.id };
+      }
+
+      function forgotView() {
+        modal(`<div class="fig">RESET PASSWORD</div><h3 style="margin:8px 0 6px">Forgot your password?</h3>
+    <p class="mut" style="font-size:13.5px;margin:0 0 4px">Enter the email address registered with HR and we'll send you a reset link.</p>
+    <form data-f="forgot" novalidate>
+      <div class="full"><label for="fpE">Email address <span class="req">*</span></label>
+        <input id="fpE" type="email" name="u" placeholder="you@hive.com" required></div>
+      <div class="full"><button class="pri wide" type="submit">Send reset link</button></div>
+    </form>`);
+      }
+
+      /* ===== button actions on this page ===== */
+      HIVE.actions["resetdemo"] = function (i, el, a) {
+        const done = (msg) => {
+          render();
+          if (msg) toast(msg);
+        };
+        noSave = true;
+        try {
+          localStorage.removeItem(STORE);
+        } catch (e) {}
+        setFlash("Demo data reset");
+        location.reload();
+        return;
+      };
+      HIVE.actions["demo"] = function (i, el, a) {
+        const done = (msg) => {
+          render();
+          if (msg) toast(msg);
+        };
+        const acc = ACCOUNTS[+i];
+        const u = $("#lgU"),
+          p = $("#lgP");
+        if (u) u.value = acc.user;
+        if (p) p.value = acc.pass;
+        clearErr(u ? u.closest("form") : null);
+        toast("Credentials filled — press Sign in");
+        return;
+      };
+      HIVE.actions["forgot"] = function (i, el, a) {
+        const done = (msg) => {
+          render();
+          if (msg) toast(msg);
+        };
+        forgotView();
+        return;
+      };
+
+      /* ===== forms on this page ===== */
+      HIVE.forms["login"] = function (form, f, btn, ev, k) {
+        if (!String(f.u || "").trim())
+          return errBox(form, "Enter your email or username.");
+        if (!String(f.p || "")) return errBox(form, "Enter your password.");
+        busy(btn, "Signing in…", 750, () => {
+          const a = auth(f.u, f.p);
+          if (!a) {
+            errBox(
+              form,
+              "Incorrect email/username or password. Use a demo account below.",
+            );
+            return;
+          }
+          session = { role: a.role, id: a.id };
+          notiOpen = false;
+          const me = a.role === "emp" ? emp(a.id) : null;
+          setFlash(
+            me && me.pend
+              ? "Welcome to Hive, " +
+                  me.n.split(" ")[0] +
+                  " — let's finish your profile"
+              : "Welcome back, " + (me ? me.n.split(" ")[0] : "HR Admin"),
+          );
+          goTo(homeOf(a.role));
+        });
+        return;
+      };
+      HIVE.forms["forgot"] = function (form, f, btn, ev, k) {
+        if (!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(String(f.u || "").trim()))
+          return errBox(form, "Enter a valid email address.");
+        busy(btn, "Sending…", 700, () => {
+          const md = $("#md");
+          if (md)
+            md.innerHTML = `<div class="fig">RESET LINK SENT</div><h3 style="margin:8px 0">Check your inbox</h3>
+          <p class="mut">If an account exists for <b style="color:var(--tx)">${esc(String(f.u).trim())}</b>, a password reset link has been sent. (Demo — no email is actually sent.)</p>
+          <div class="mact"><button class="pri" data-a="close">Back to sign in</button></div>`;
+          toast("Reset link sent");
+        });
+        return;
+      };
+
+      /* ===== start ===== */
+      HIVE.view = loginView;
+      hiveStart();
+    </script>
+  </body>
+</html>

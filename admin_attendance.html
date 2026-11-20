@@ -1,0 +1,102 @@
+<!DOCTYPE html>
+<!--
+  HR Admin · Attendance
+  HR admin attendance: today's shifts, overtime/document requests, corrections.
+  Shared pieces (data, sidebar/top bar, payroll + leave engines, helpers) live in js/core.js and css/hive.css.
+-->
+<html lang="en"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>HR Admin · Attendance · Hive HRIS</title>
+<script>try{var t=localStorage.getItem("hive.theme");if(t)document.documentElement.setAttribute("data-theme",t)}catch(e){}</script>
+<link rel="stylesheet" href="css/hive.css">
+</head>
+<body>
+<div id="root"></div><div id="sc"></div><div id="md"></div><div id="ts"></div>
+
+<script>window.HIVE_PAGE={role:"adm",page:"attendance"};</script>
+<script src="js/core.js"></script>
+<script>
+"use strict";
+/* ===== HR Admin · Attendance — this page's screen ===== */
+function admAtt(){
+  const ap=(a,i)=>`<button class="sm pri" data-a="${a}ap" data-i="${i}">Approve</button> <button class="sm dngr" data-a="${a}rj" data-i="${i}">Reject</button>`;
+  const pendFix=fixes.filter(f=>f.st==="Pending"),doneFix=fixes.filter(f=>f.st!=="Pending");
+  return head("HR Admin / Attendance",`Today’s shift,<br><em>every employee.</em>`,"Spot lates and absences, then clear correction requests — every change is logged.")
+  +tbl(["Employee","Shift","In","Out","Status"],emps.map(e=>{
+      const r=recFor(e.id,Y),sh=shiftOf(e.id);
+      if(Y<(e.j||""))return[who(e),sh.name,'<span class="mut">—</span>','<span class="mut">—</span>',`<span class="tag">Starts ${shortDate(e.j)}</span>`];
+      if(isRest(Y,sh))return[who(e),sh.name,'<span class="mut">—</span>','<span class="mut">—</span>','<span class="tag">Rest day</span>'];
+      if(onLeave(e.id,Y))return[who(e),sh.name,'<span class="mut">—</span>','<span class="mut">—</span>',`<span class="tag info">On leave</span>`];
+      return[who(e),sh.name,r&&r.in?r.in:'<span class="mut">—</span>',r&&r.out?r.out:'<span class="mut">—</span>',
+        !r||!r.in?tg("Absent"):r.out==null?'<span class="tag wait">Clocked in</span>':
+        mins(r.in)>mins(sh.start)?'<span class="tag wait">Late</span>':tg("On time")]}))
+  +`<div class="card mt">
+      <div class="cardhd"><div><div class="fig">CORRECTION REQUESTS</div><h3>Attendance corrections</h3></div>
+        <span class="tag ${pendFix.length?"wait":""}">${pendFix.length} pending</span></div>
+      ${tbl(["Employee","Date","Type","Requested","Reason","Status","HR remarks",""],
+        fixes.map(f=>[esc(nm(f.e)),shortDate(f.d),esc(f.ty),f.time?`<b>${f.time}</b>`:"—",esc(f.why),tg(f.st),
+          f.st==="Pending"?`<textarea data-rm="fx${f.id}" rows="1" placeholder="Remarks (optional)" style="min-width:160px"></textarea>`:f.rm?esc(f.rm):'<span class="mut">—</span>',
+          f.st==="Pending"?ap("fx",f.id):'<span class="mut">Done</span>']),"No correction requests.")}
+    </div>
+    <div class="card mt">
+      <div class="cardhd"><div><div class="fig">OVERTIME &amp; DOCUMENT REQUESTS</div><h3>Other requests</h3></div></div>
+      ${tbl(["Employee","Request","Date","Status",""],reqs.map(r=>[esc(nm(r.e)),esc(r.t),shortDate(r.d),tg(r.st),
+        r.st==="Pending"?`<button class="sm pri" data-a="ap" data-i="${r.id}">Approve</button> <button class="sm dngr" data-a="rj" data-i="${r.id}">Reject</button>`:'<span class="mut">Done</span>']),"No requests.")}
+    </div>
+    <div class="card mt">
+      <div class="cardhd"><div><div class="fig">AUDIT TRAIL</div><h3>Change history</h3></div></div>
+      ${audit.length?audit.slice(0,8).map(a=>`<div class="ls"><b>${esc(a.act)}</b> <span class="mut">· ${ago(a.ts)} · ${esc(a.who)}</span><br><span class="mut" style="font-size:13px">${esc(a.det)}</span></div>`).join("")
+        :`<p class="mut">No changes recorded yet — approvals and corrections appear here.</p>`}
+    </div>`;
+}
+
+function decideFix(id,ok){
+  const f=fixes.find(x=>x.id==id);if(!f||f.st!=="Pending")return;
+  const rmEl=document.querySelector('[data-rm="fx'+id+'"]');
+  const rm=rmEl&&rmEl.value?rmEl.value.trim():"";
+  confirmDlg((ok?"Approve":"Reject")+" the attendance correction for "+nm(f.e)+" on "+shortDate(f.d)+"?",()=>{
+    f.st=ok?"Approved":"Rejected";
+    f.rm=rm||(ok?"Approved by HR":"Rejected by HR");
+    f.rev=Y;
+    if(ok){
+      let r=recFor(f.e,f.d);
+      if(!r){r={e:f.e,d:f.d,in:null,out:null,note:""};att.push(r)}
+      if(f.ty==="Forgot to Clock In"||f.ty==="Incorrect Clock In")r.in=f.time;
+      else r.out=f.time;
+      r.note="Corrected from request #"+f.id;
+      audit.unshift({ts:Date.now(),who:"HR Admin",act:"Attendance corrected",det:nm(f.e)+" · "+f.d+" · "+f.ty+" → "+f.time});
+    }else{
+      audit.unshift({ts:Date.now(),who:"HR Admin",act:"Correction rejected",det:nm(f.e)+" · "+f.d+" · "+f.ty});
+    }
+    if(f.e===ME)pushNoti("correction",ok?"Attendance correction approved":"Attendance correction rejected",
+      shortDate(f.d)+" · "+f.ty+" — "+f.rm,"#emp-attendance");
+    ensureBonus(true);
+    render();
+    toast("Correction "+f.st.toLowerCase()+" — attendance record updated");
+  });
+}
+
+function decideReq(id,ok){
+  const r=reqs.find(x=>x.id==id);if(!r||r.st!=="Pending")return;
+  confirmDlg((ok?"Approve":"Reject")+" this "+r.t.toLowerCase()+" request?",()=>{
+    r.st=ok?"Approved":"Rejected";
+    audit.unshift({ts:Date.now(),who:"HR Admin",act:"Request "+r.st.toLowerCase(),det:nm(r.e)+" · "+r.t+" · "+shortDate(r.d)});
+    if(r.e===ME)pushNoti("hr","Your "+r.t+" request was "+r.st.toLowerCase(),shortDate(r.d),"#emp-home");
+    render();
+    toast("Request "+r.st.toLowerCase());
+  });
+}
+
+/* ===== button actions on this page ===== */
+HIVE.actions["ap"]=function(i,el,a){
+  const done=msg=>{render();if(msg)toast(msg)};decideReq(i,a==="ap");return};
+HIVE.actions["rj"]=HIVE.actions["ap"];
+HIVE.actions["fxap"]=function(i,el,a){
+  const done=msg=>{render();if(msg)toast(msg)};decideFix(i,a==="fxap");return};
+HIVE.actions["fxrj"]=HIVE.actions["fxap"];
+
+/* ===== start ===== */
+HIVE.view=admAtt;
+hiveStart();
+</script>
+</body></html>

@@ -1,0 +1,105 @@
+<!DOCTYPE html>
+<!--
+  Employee · Complete your profile (first sign-in)
+  Shown once, right after HR creates the account: the employee confirms what HR entered,
+  fills in their own personal details and replaces the temporary password.
+  Until this is done, core.js sends every employee page back here.
+  Shared pieces (data, helpers, router) live in js/core.js and css/hive.css.
+-->
+<html lang="en"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Complete your profile · Hive HRIS</title>
+<script>try{var t=localStorage.getItem("hive.theme");if(t)document.documentElement.setAttribute("data-theme",t)}catch(e){}</script>
+<link rel="stylesheet" href="css/hive.css">
+</head>
+<body>
+<div id="root"></div><div id="sc"></div><div id="md"></div><div id="ts"></div>
+
+<script>window.HIVE_PAGE={role:"emp",page:"setup"};</script>
+<script src="js/core.js"></script>
+<script>
+"use strict";
+/* ===== Employee · Complete your profile — this page's screen ===== */
+const digits=s=>String(s||"").replace(/\D/g,"");
+
+function setupView(){
+  const e=emp(ME),first=e.n.split(" ")[0];
+  const lock=(k,v)=>`<div class="k">${k} ${ico("lock")}</div><div class="v">${v}</div>`;
+  return `<div class="eyebrow">Welcome to Hive</div>
+    <h1>Hi ${esc(first)},<br><em>let’s finish your profile.</em></h1>
+    <p class="lead">HR created your account. Check the details below, add your personal information and choose your own password. It takes about two minutes — you can’t open the rest of Hive until this is done.</p>
+    <div class="steps"><span><b>1</b> Confirm</span><span><b>2</b> About you</span><span><b>3</b> Password</span></div>
+    <form data-f="setup" class="setupform" novalidate>
+      <div class="card">
+        <div class="fig">STEP 1 · SET BY HR</div><h3 style="margin-top:4px">Your account</h3>
+        <div class="docgrid">
+          ${lock("Full name",esc(e.n))}${lock("Work email",esc(e.email))}${lock("Username",esc(e.user||e.id))}${lock("Employee ID",esc(e.id))}
+          ${lock("Position",esc(e.r))}${lock("Department",esc(e.d))}${lock("Date hired",shortDate(e.j))}
+          ${lock("Shift",esc(shiftOf(ME).name)+" · "+shiftOf(ME).start+"–"+shiftOf(ME).end)}
+        </div>
+        <label class="chk" style="margin-top:16px"><input type="checkbox" name="ok"> These details are correct. (If something is wrong, tell HR — they manage these fields.)</label>
+      </div>
+
+      <div class="card">
+        <div class="fig">STEP 2 · FILLED IN BY YOU</div><h3 style="margin-top:4px">About you</h3>
+        <div class="fgrid">
+          <div><label for="suB">Birthday <span class="req">*</span></label><input id="suB" name="bd" type="date" min="1940-01-01" max="${Y}" required></div>
+          <div><label for="suP">Contact number <span class="req">*</span></label><input id="suP" name="ph" type="tel" placeholder="0917 123 4567" autocomplete="tel" required></div>
+          <div class="full"><label for="suA">Home address <span class="req">*</span></label><input id="suA" name="addr" autocomplete="street-address" placeholder="House no., street, barangay, city" required></div>
+          <div><label for="suEn">Emergency contact name <span class="req">*</span></label><input id="suEn" name="ecn" placeholder="e.g. Ana Santos" required></div>
+          <div><label for="suEp">Emergency contact number <span class="req">*</span></label><input id="suEp" name="ecp" type="tel" placeholder="0917 000 0000" required></div>
+        </div>
+      </div>
+
+      <div class="card">
+        <div class="fig">STEP 3 · SECURITY</div><h3 style="margin-top:4px">Choose your own password</h3>
+        <div class="fgrid">
+          <div><label for="suN">New password <span class="req">*</span></label>
+            <div class="pw"><input id="suN" name="new" type="password" autocomplete="new-password" required><button type="button" data-a="vis" data-i="suN">Show</button></div></div>
+          <div><label for="suR">Confirm new password <span class="req">*</span></label>
+            <div class="pw"><input id="suR" name="rep" type="password" autocomplete="new-password" required><button type="button" data-a="vis" data-i="suR">Show</button></div></div>
+          <div class="hintbox full">At least 8 characters, mixing letters and numbers, and different from the temporary password HR gave you.</div>
+        </div>
+      </div>
+      <div><button class="pri wide" type="submit">Save and continue</button></div>
+    </form>`;
+}
+
+/* ===== forms on this page ===== */
+HIVE.forms["setup"]=function(form,f,btn,ev,k){
+  const me=emp(ME);
+  if(!f.ok)return errBox(form,"Please confirm that the details HR entered are correct.");
+  if(!f.bd)return errBox(form,"Enter your birthday.");
+  const bd=pdate(f.bd);
+  if(isNaN(bd)||f.bd>Y)return errBox(form,"Enter a valid birthday.");
+  const age=TODAY.getFullYear()-bd.getFullYear()-((TODAY.getMonth()<bd.getMonth()||(TODAY.getMonth()===bd.getMonth()&&TODAY.getDate()<bd.getDate()))?1:0);
+  if(age<15)return errBox(form,"That birthday doesn't look right — please check the date.");
+  const pd=digits(f.ph);
+  if(pd.length<10||pd.length>13)return errBox(form,"Enter a valid contact number (10–13 digits).");
+  if(String(f.addr||"").trim().length<5)return errBox(form,"Enter your home address.");
+  if(String(f.ecn||"").trim().length<2)return errBox(form,"Enter your emergency contact's name.");
+  const ed=digits(f.ecp);
+  if(ed.length<7||ed.length>13)return errBox(form,"Enter a valid emergency contact number.");
+  if(!f.new||String(f.new).length<8)return errBox(form,"The new password must be at least 8 characters.");
+  if(!/[a-zA-Z]/.test(f.new)||!/\d/.test(f.new))return errBox(form,"Include at least one letter and one number in your password.");
+  if(f.new!==f.rep)return errBox(form,"The two passwords don't match.");
+  if(f.new===me.pass)return errBox(form,"Choose a password different from the temporary one.");
+  busy(btn,"Saving…",600,()=>{
+    me.b=f.bd.slice(5);                                        // stored as MM-DD like the rest of the directory
+    me.ph=String(f.ph).trim();me.addr=String(f.addr).trim();
+    me.ec=String(f.ecn).trim()+" · "+String(f.ecp).trim();
+    me.pass=String(f.new);me.pwAt=Date.now();
+    delete me.pend;me.profileAt=Date.now();
+    audit.unshift({ts:Date.now(),who:me.n,act:"Profile completed",det:me.id+" finished first sign-in setup"});
+    pushNoti("hr","Welcome to Hive, "+me.n.split(" ")[0],"Your profile is complete. Leave, attendance and payslips are now available.","#emp-home");
+    setFlash("Profile complete — welcome to Hive, "+me.n.split(" ")[0]);
+    goTo("#emp-home");
+  });
+  return;
+};
+
+/* ===== start ===== */
+HIVE.view=setupView;
+hiveStart();
+</script>
+</body></html>
