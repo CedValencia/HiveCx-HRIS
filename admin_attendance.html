@@ -25,10 +25,10 @@ function admAtt(){
   +tbl(["Employee","Shift","In","Out","Status"],emps.map(e=>{
       const r=recFor(e.id,Y),sh=shiftOf(e.id);
       if(Y<(e.j||""))return[who(e),sh.name,'<span class="mut">—</span>','<span class="mut">—</span>',`<span class="tag">Starts ${shortDate(e.j)}</span>`];
-      if(isRest(Y,sh))return[who(e),sh.name,'<span class="mut">—</span>','<span class="mut">—</span>','<span class="tag">Rest day</span>'];
+      if(isRest(Y,sh)&&!(r&&r.in))return[who(e),sh.name,'<span class="mut">—</span>','<span class="mut">—</span>','<span class="tag">Rest day</span>'];
       if(onLeave(e.id,Y))return[who(e),sh.name,'<span class="mut">—</span>','<span class="mut">—</span>',`<span class="tag info">On leave</span>`];
       return[who(e),sh.name,r&&r.in?r.in:'<span class="mut">—</span>',r&&r.out?r.out:'<span class="mut">—</span>',
-        !r||!r.in?tg("Absent"):r.out==null?'<span class="tag wait">Clocked in</span>':
+        isRest(Y,sh)?'<span class="tag info">Rest-day work</span>':!r||!r.in?tg("Absent"):r.out==null?'<span class="tag wait">Clocked in</span>':
         mins(r.in)>mins(sh.start)?'<span class="tag wait">Late</span>':tg("On time")]}))
   +`<div class="card mt">
       <div class="cardhd"><div><div class="fig">CORRECTION REQUESTS</div><h3>Attendance corrections</h3></div>

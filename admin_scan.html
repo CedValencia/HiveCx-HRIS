@@ -1,0 +1,163 @@
+<!doctype html>
+<!--
+  HR Admin · Scan QR
+  HR scans each employee's rotating QR code: first scan of the day = clock in, second = clock out.
+  Token + punch logic lives in js/core.js (makeToken / readToken / punchFor); styles in css/hive.css.
+-->
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta
+      name="viewport"
+      content="width=device-width, initial-scale=1, viewport-fit=cover"
+    />
+    <title>HR Admin · Scan QR · Hive HRIS</title>
+    <script>
+      try {
+        var t = localStorage.getItem("hive.theme");
+        if (t) document.documentElement.setAttribute("data-theme", t);
+      } catch (e) {}
+    </script>
+    <link rel="stylesheet" href="css/hive.css" />
+  </head>
+  <body>
+    <div id="root"></div>
+    <div id="sc"></div>
+    <div id="md"></div>
+    <div id="ts"></div>
+
+    <script>
+      window.HIVE_PAGE = { role: "adm", page: "scan" };
+    </script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/html5-qrcode/2.3.8/html5-qrcode.min.js"></script>
+    <script src="js/core.js"></script>
+    <script>
+      "use strict";
+      /* ===== HR Admin · Scan QR — this page's screen ===== */
+      let scanner = null, // the running camera, if any
+        wantScan = false, // true while HR wants the camera on (survives re-renders)
+        scanLog = [],
+        lastHit = {}, // when each employee last clocked (min. 60 s between in and out)
+        lastText = {}; // last code text seen per employee, so one code in view only counts once
+
+      function scanLogHTML() {
+        return (
+          scanLog
+            .map(
+              (l) =>
+                `<div class="ls"><span class="tag ${l.ok ? "ok" : "wait"}">${l.ok ? "OK" : "Check"}</span> ${esc(l.msg)} <span class="mut">· ${l.t}</span></div>`,
+            )
+            .join("") || `<p class="mut">Nothing scanned yet.</p>`
+        );
+      }
+
+      function admScan() {
+        return (
+          head(
+            "HR Admin / Scan QR",
+            `Scan in,<br><em>scan out.</em>`,
+            "Point the camera at an employee's QR code. Their first scan of the day clocks them in, the second clocks them out.",
+          ) +
+          `<div class="grid g2">
+      <div class="card">
+        <div class="cardhd"><div><div class="fig">CAMERA</div><h3>Scan employee QR</h3></div></div>
+        <div id="reader"></div>
+        <div class="row" style="margin-top:12px">
+          <button class="pri" data-a="scanstart">${ico("qr")} Start camera</button>
+          <button data-a="scanstop">Stop</button>
+        </div>
+        <p class="mut" style="font-size:12.5px;margin:10px 0 0">Needs camera permission, and the page must be served over HTTPS or localhost.</p>
+      </div>
+      <div class="card">
+        <div class="cardhd"><div><div class="fig">NO CAMERA?</div><h3>Simulate a scan</h3></div></div>
+        <p class="mut" style="font-size:13px;margin:0 0 10px">For testing on one device: pick an employee and it scans a fresh code for them.</p>
+        <label for="simE">Employee</label>
+        <select id="simE">${emps.map((e) => `<option value="${e.id}">${esc(e.n)} · ${e.id}</option>`).join("")}</select>
+        <div class="row" style="margin-top:12px"><button data-a="scansim">Simulate scan</button></div>
+      </div>
+    </div>
+    <div class="card mt"><div class="fig">RECENT SCANS</div><div id="scanLog">${scanLogHTML()}</div></div>`
+        );
+      }
+
+      function onScan(text, force) {
+        const t = readToken(text);
+        let res;
+        if (t.err) res = { ok: false, msg: t.err };
+        else {
+          if (!force && lastText[t.id] === text) return; // same frame still in view
+          lastText[t.id] = text;
+          const wait = 60 - Math.floor((Date.now() - (lastHit[t.id] || 0)) / 1000);
+          if (!force && wait > 0) {
+            res = { ok: false, msg: "Already scanned a moment ago — wait " + wait + "s before the next scan" };
+          } else {
+            lastHit[t.id] = Date.now();
+            res = punchFor(t.id);
+            saveState(); // share the new attendance record with every other page
+          }
+        }
+        scanLog.unshift({ ok: res.ok, msg: res.msg, t: nowHM() });
+        scanLog = scanLog.slice(0, 20);
+        const el = document.getElementById("scanLog");
+        if (el) el.innerHTML = scanLogHTML(); // not render(): that would wipe the camera view
+        toast(res.msg, !res.ok || res.late);
+      }
+
+      function scanTick() {
+        if (!wantScan || scanner) return;
+        if (!document.getElementById("reader")) return;
+        if (!window.Html5Qrcode) {
+          wantScan = false;
+          toast("Scanner library didn't load — check your internet connection", true);
+          return;
+        }
+        const sc = new Html5Qrcode("reader");
+        scanner = sc;
+        sc.start(
+          { facingMode: "environment" },
+          { fps: 10, qrbox: { width: 230, height: 230 } },
+          (txt) => onScan(txt, false),
+          () => {},
+        ).catch(() => {
+          scanner = null;
+          wantScan = false;
+          toast("Couldn't open the camera — allow access (HTTPS or localhost needed). Use “Simulate a scan” to test.", true);
+        });
+      }
+
+      function stopScan() {
+        wantScan = false;
+        const sc = scanner;
+        scanner = null;
+        if (sc) sc.stop().then(() => sc.clear()).catch(() => {});
+      }
+
+      /* render() rebuilds the page, so release the old camera first; the 1-second tick restarts it */
+      HIVE.beforeRender = function () {
+        if (!scanner) return;
+        const old = scanner;
+        scanner = null;
+        old.stop().then(() => old.clear()).catch(() => {});
+      };
+      HIVE.tick = scanTick;
+      addEventListener("pagehide", stopScan);
+
+      /* ===== button actions on this page ===== */
+      HIVE.actions["scanstart"] = function () {
+        wantScan = true;
+        scanTick();
+      };
+      HIVE.actions["scanstop"] = function () {
+        stopScan();
+      };
+      HIVE.actions["scansim"] = function () {
+        const sel = $("#simE");
+        if (sel) onScan(makeToken(sel.value), true);
+      };
+
+      /* ===== start ===== */
+      HIVE.view = admScan;
+      hiveStart();
+    </script>
+  </body>
+</html>

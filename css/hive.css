@@ -437,19 +437,19 @@ body.menu-open #sc {
   font-size: 12px;
   margin-top: 6px;
 }
-.bar {
+.barrow {
   display: flex;
   align-items: center;
   gap: 10px;
   margin: 9px 0;
   font-size: 13px;
 }
-.bar b {
+.barrow b {
   flex: 0 0 118px;
   font-weight: 400;
   color: var(--mut);
 }
-.bar div {
+.barrow div {
   height: 8px;
   border-radius: 9px;
   background: var(--ac);
@@ -1621,4 +1621,132 @@ div.day {
     animation: none !important;
     transition: none !important;
   }
+}
+
+/* ---- QR clock-in ---- */
+.qrwrap {
+  display: flex;
+  gap: 20px;
+  align-items: center;
+  flex-wrap: wrap;
+  margin-top: 18px;
+  padding: 16px;
+  border: 1px solid var(--line);
+  border-radius: var(--r);
+}
+.qrbox {
+  background: #fff;
+  padding: 12px;
+  border-radius: 12px;
+  min-width: 224px;
+  min-height: 224px;
+  display: grid;
+  place-items: center;
+}
+.qrbox img,
+.qrbox canvas {
+  display: block;
+}
+.qrinfo {
+  flex: 1;
+  min-width: 200px;
+}
+.qrinfo p {
+  margin: 6px 0 10px;
+  font-size: 13.5px;
+}
+.qrbar {
+  height: 4px;
+  border-radius: 99px;
+  background: var(--line);
+  overflow: hidden;
+}
+.qrbar i {
+  display: block;
+  height: 100%;
+  width: 100%;
+  background: var(--ac);
+  transition: width 1s linear;
+}
+#reader {
+  width: 100%;
+  min-height: 120px;
+  border-radius: var(--r);
+  overflow: hidden;
+}
+
+/* ---- first-sign-in setup page + credentials (carried over from the old hive.js) ---- */
+.setuphd {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  height: 60px;
+  padding: 0 clamp(16px, 4vw, 36px);
+  background: color-mix(in srgb, var(--bg) 86%, transparent);
+  backdrop-filter: blur(14px);
+  border-bottom: 1px solid var(--line);
+  position: sticky;
+  top: 0;
+  z-index: 30;
+}
+.setupmain {
+  max-width: 780px;
+  margin: 0 auto;
+  padding: clamp(22px, 4vw, 44px) clamp(16px, 4vw, 28px) 70px;
+}
+.setupform {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 16px;
+  margin-top: 6px;
+}
+.fgrid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  gap: 13px;
+  margin-top: 14px;
+}
+.fgrid .full {
+  grid-column: 1/-1;
+}
+.steps {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+  margin: 0 0 20px;
+}
+.steps span {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  font:
+    11px ui-monospace,
+    monospace;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--mut);
+  border: 1px solid var(--line);
+  border-radius: 99px;
+  padding: 5px 12px;
+  background: var(--panel);
+}
+.steps b {
+  display: inline-grid;
+  place-items: center;
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
+  background: var(--ac);
+  color: var(--acx);
+  font-size: 10px;
+}
+.cred {
+  font:
+    600 15px ui-monospace,
+    Menlo,
+    Consolas,
+    monospace;
+  letter-spacing: 0.02em;
+  user-select: all;
 }

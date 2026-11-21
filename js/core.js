@@ -51,6 +51,7 @@ const IP={
  edit:'<path d="M4 20h4L19 9a2.1 2.1 0 0 0-3-3L5 17z"/><path d="M14.5 6.5 17.5 9.5"/>',
  print:'<path d="M7 9V4h10v5"/><rect x="4" y="9" width="16" height="7" rx="2"/><path d="M7 14h10v6H7z"/>',
  dl:'<path d="M12 4v11M8 11.5 12 15.5 16 11.5"/><path d="M5 20h14"/>',
+ qr:'<rect x="3.5" y="3.5" width="6.5" height="6.5" rx="1.2"/><rect x="14" y="3.5" width="6.5" height="6.5" rx="1.2"/><rect x="3.5" y="14" width="6.5" height="6.5" rx="1.2"/><path d="M14 14h2.5v2.5H14zM18 18h2.5v2.5H18zM18 14h2.5M14 18v2.5"/>',
  plus:'<path d="M12 5v14M5 12h14"/>',
  alert:'<path d="M12 4 2.8 20h18.4z"/><path d="M12 10v4.5M12 17.4v.2"/>',
  info:'<circle cx="12" cy="12" r="8.5"/><path d="M12 11v5M12 8v.2"/>',
@@ -497,7 +498,62 @@ function leaveCalCard(forEmp){
 }
 
 /* Each page registers its own screen and handlers here (see the <script> inside every *.html page). */
-const HIVE={view:null,actions:{},forms:{}};
+const HIVE={view:null,actions:{},forms:{},beforeRender:null,afterRender:null,tick:null};
+/* ---------- QR CLOCK-IN: token + punch engine (employee page shows the code, admin scan page reads it) ---------- */
+const QR_SECRET="hive-demo-secret";   // prototype only — in production sign with HMAC on a server
+const QR_TTL=30;                      // seconds a code stays on screen
+const QR_MAX_AGE=90;                  // seconds the scanner still accepts it
+const qrSign=str=>{let h=5381;str=str+QR_SECRET;for(let i=0;i<str.length;i++)h=((h<<5)+h+str.charCodeAt(i))>>>0;return h.toString(36)};
+const makeToken=id=>{const ts=Math.floor(Date.now()/1000);return["HIVE",id,ts,qrSign(id+"|"+ts)].join("|")};
+function readToken(text){
+  const p=String(text).split("|");
+  if(p[0]!=="HIVE"||p.length!==4)return{err:"Not a Hive QR code"};
+  if(qrSign(p[1]+"|"+p[2])!==p[3])return{err:"Invalid QR code"};
+  if(Math.abs(Date.now()/1000-Number(p[2]))>QR_MAX_AGE)return{err:"QR expired — ask the employee to refresh their screen"};
+  return{id:p[1]};
+}
+const nowHM=()=>{const d=new Date();return pad2(d.getHours())+":"+pad2(d.getMinutes())};
+/* first scan of the day = clock in, second = clock out */
+function punchFor(id){
+  const e=emps.find(x=>x.id===id);
+  if(!e)return{ok:false,msg:"Unknown employee"};
+  const sh=shiftOf(id);
+  if(Y<(e.j||""))return{ok:false,msg:e.n+" starts on "+shortDate(e.j)};
+  if(onLeave(id,Y))return{ok:false,msg:e.n+" is on approved leave today"};
+  const off=holOn(Y)?"holiday":isRest(Y,sh)?"rest day":"";   // not a scheduled workday: still logged, but never counted late
+  let r=recFor(id,Y);
+  if(r&&r.in&&r.out)return{ok:false,msg:e.n+" already completed today ("+r.in+"–"+r.out+")"};
+  const t=nowHM(),note=(ti,b)=>notis.unshift({id:++nid,e:id,ty:"hr",t:ti,b:b,ts:Date.now(),read:false,go:"#emp-attendance"});
+  if(!r||!r.in){
+    if(!r){r={e:id,d:Y,in:null,out:null,note:""};att.push(r)}
+    r.in=t;r.note=off?"QR clock in · "+off+" work":"QR clock in";
+    const late=off?0:Math.max(0,mins(t)-mins(sh.start));
+    audit.unshift({ts:Date.now(),who:"HR Admin",act:"QR clock in",det:e.n+" · "+Y+" · "+t+(late?" · "+late+" min late":"")});
+    note("Clocked in at "+t,late?"Late by "+late+" min":"On time");
+    ensureBonus(true);
+    return{ok:true,late:late>0,msg:e.n+" clocked IN at "+t+(off?" · "+off+" work":late?" · late by "+late+" min":" · on time")};
+  }
+  if(mins(t)<mins(r.in))return{ok:false,msg:"Clock-out can't be before clock-in ("+r.in+")"};
+  r.out=t;
+  const w=mins(t)-mins(r.in);
+  audit.unshift({ts:Date.now(),who:"HR Admin",act:"QR clock out",det:e.n+" · "+Y+" · "+t});
+  note("Clocked out at "+t,Math.floor(w/60)+"h "+(w%60)+"m worked");
+  ensureBonus(true);
+  return{ok:true,msg:e.n+" clocked OUT at "+t+" · "+Math.floor(w/60)+"h "+(w%60)+"m worked"};
+}
+/* employee side: draw / refresh the rotating QR whenever #qrBox is on screen */
+function paintQR(){
+  const box=document.getElementById("qrBox");if(!box)return;
+  if(!window.QRCode){box.innerHTML='<p style="color:#555;font-size:12px;margin:0">QR library did not load — check your internet connection.</p>';return}
+  const age=Date.now()-(+box.dataset.t||0);
+  if(!box.firstChild||age>=QR_TTL*1000){
+    box.innerHTML="";box.dataset.t=Date.now();
+    new QRCode(box,{text:makeToken(ME),width:200,height:200,correctLevel:QRCode.CorrectLevel.M});
+  }
+  const bar=document.getElementById("qrBar");
+  if(bar)bar.style.width=Math.max(0,100-(Date.now()-box.dataset.t)/(QR_TTL*10))+"%";
+}
+
 function hiveStart(){boot();render();showFlash()}
 
 /* ---------- PAGES & NAVIGATION (one HTML file per module) ---------- */
@@ -506,7 +562,7 @@ const PAGES={
        payslips:"employee_payslips.html",profile:"employee_profile.html",setup:"employee_setup.html"},
   adm:{dashboard:"admin_home.html",employees:"admin_employees.html",attendance:"admin_attendance.html",
        leave:"admin_leave.html",payroll:"admin_payroll.html",announcements:"admin_announcements.html",
-       reports:"admin_reports.html"}
+       reports:"admin_reports.html",scan:"admin_scan.html"}
 };
 const SIGNIN="signin.html";
 const fileOf=h=>{const p=String(h).replace(/^#/,"").split("-");return(PAGES[p[0]]||{})[p[1]]||SIGNIN};
@@ -542,9 +598,9 @@ function loadState(){            // returns true when saved data is from today
 
 /* ---------- SHELL / ROUTER ---------- */
 const EMP={home:"Home",attendance:"Attendance",leave:"Leave",payslips:"Payslips",profile:"My Profile"};
-const ADM={dashboard:"Dashboard",employees:"Employees",attendance:"Attendance",leave:"Leave",payroll:"Payroll",announcements:"Announcements",reports:"Reports"};
+const ADM={dashboard:"Dashboard",employees:"Employees",attendance:"Attendance",leave:"Leave",payroll:"Payroll",announcements:"Announcements",reports:"Reports",scan:"Scan QR"};
 const EMP_ICON={home:"home",attendance:"cal",leave:"plane",payslips:"wallet",profile:"user"};
-const ADM_ICON={dashboard:"grid",employees:"users",attendance:"cal",leave:"plane",payroll:"wallet",announcements:"mega",reports:"chart"};
+const ADM_ICON={dashboard:"grid",employees:"users",attendance:"cal",leave:"plane",payroll:"wallet",announcements:"mega",reports:"chart",scan:"qr"};
 
 function themeIsDark(){
   const t=document.documentElement.getAttribute("data-theme");
@@ -613,6 +669,7 @@ function render(){
     if(!me.pend&&P.page==="setup"){goTo("#emp-home");return}
   }
   const role=P.role,page=P.page;
+  if(HIVE.beforeRender)HIVE.beforeRender();
   root.innerHTML=page==="setup"?setupShell(HIVE.view?HIVE.view():""):shell(role,page,HIVE.view?HIVE.view():"");
   fixLinks(root);
   if(!lastV){
@@ -624,6 +681,8 @@ function render(){
   if(s)s.oninput=ev=>{q=ev.target.value;const p=ev.target.selectionStart;render();
     const n=$("#q");if(n){n.focus();try{n.setSelectionRange(p,p)}catch(x){}}};
   tickClock();
+  paintQR();
+  if(HIVE.afterRender)HIVE.afterRender();
   saveState();
 }
 function tickClock(){
@@ -773,4 +832,4 @@ function boot(){
   ensureBonus(false);
 }
 addEventListener("pagehide",saveState);
-setInterval(tickClock,1000);
+setInterval(()=>{tickClock();paintQR();if(HIVE.tick)HIVE.tick()},1000);

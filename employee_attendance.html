@@ -29,6 +29,7 @@
     <script>
       window.HIVE_PAGE = { role: "emp", page: "attendance" };
     </script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
     <script src="js/core.js"></script>
     <script>
       "use strict";
@@ -57,35 +58,41 @@
           h = holOn(Y);
         let status,
           cls = "wait",
-          inBtn = "",
-          outBtn = "";
-        if (h) {
-          status = "Holiday · " + h.n;
+          qr = "";
+        const qrBlock = (title, text) =>
+          `<div class="qrwrap"><div class="qrbox" id="qrBox"></div>
+            <div class="qrinfo"><div class="fig">${title}</div>
+              <p>${text}</p>
+              <div class="qrbar" aria-hidden="true"><i id="qrBar"></i></div>
+              <p class="mut" style="font-size:12px;margin:8px 0 0">${ico("shield")} Code refreshes every ${QR_TTL} seconds — screenshots won't work.</p></div></div>`;
+        /* a rest day or holiday isn't a scheduled workday, but people can still be asked to work — HR's scan logs it */
+        const off = h ? "Holiday · " + h.n : isRest(Y, sh) ? "Rest day" : "";
+        if (onLeave(ME, Y) && !(r && r.in)) {
+          status = "On approved leave";
           cls = "info";
-        } else if (isRest(Y, sh)) {
-          status = "Rest day — no shift scheduled";
-          cls = "";
         } else if (!r || r.in == null) {
-          status = "Not clocked in yet";
-          cls = "";
-          inBtn = `<button class="pri" data-a="in">Clock in ${ico("cr")}</button>`;
-          outBtn = `<button data-a="out" disabled>Clock out</button>`;
+          status = off ? off + " — not scheduled" : "Not clocked in yet";
+          cls = off ? "info" : "";
+          qr = qrBlock(
+            "SHOW TO CLOCK IN",
+            off
+              ? "Today isn't a scheduled workday. Only show this to HR if you've been asked to work — it is logged as " + (h ? "holiday" : "rest-day") + " work."
+              : "Show this code to HR when you arrive. Their scan records your clock-in.",
+          );
         } else if (r.out == null) {
-          const late = Math.max(0, mins(r.in) - mins(sh.start));
-          status =
-            late > 0
+          const late = off ? 0 : Math.max(0, mins(r.in) - mins(sh.start));
+          status = off
+            ? "Clocked in · " + off + " work"
+            : late > 0
               ? `Clocked in · Late by ${late} min`
               : "Clocked in · On time";
           cls = late > 0 ? "wait" : "ok";
-          inBtn = `<button data-a="in" disabled>Already clocked in</button>`;
-          outBtn = `<button class="pri" data-a="out">Clock out ${ico("cl")}</button>`;
+          qr = qrBlock("SHOW TO CLOCK OUT", "Show this code to HR when you leave. Their second scan records your clock-out.");
         } else {
-          const late = Math.max(0, mins(r.in) - mins(sh.start)),
+          const late = off ? 0 : Math.max(0, mins(r.in) - mins(sh.start)),
             hrs = Math.max(0, mins(r.out) - mins(r.in));
-          status = `Shift complete · ${Math.floor(hrs / 60)}h ${hrs % 60}m worked${late ? ` · ${late} min late` : " · On time"}`;
+          status = `Shift complete · ${Math.floor(hrs / 60)}h ${hrs % 60}m worked${off ? " · " + off + " work" : late ? ` · ${late} min late` : " · On time"}`;
           cls = late > 0 ? "wait" : "ok";
-          inBtn = `<button data-a="in" disabled>Clocked in</button>`;
-          outBtn = `<button data-a="out" disabled>Clocked out</button>`;
         }
         return `<div class="card">
     <div class="cardhd"><div><div class="fig">YOUR SHIFT</div><h3>${esc(sh.name)}</h3></div>
@@ -98,8 +105,8 @@
       <div><div class="fig">ACTUAL IN</div><b class="${r && r.in ? "" : "miss"}">${r && r.in ? r.in : "—"}</b></div>
       <div><div class="fig">ACTUAL OUT</div><b class="${r && r.out ? "" : "miss"}">${r && r.out ? r.out : "—"}</b></div>
     </div>
-    <div class="punch">${inBtn}${outBtn}</div>
-    ${!r && !h && !isRest(Y, sh) ? `<p class="mut" style="font-size:12.5px;margin:12px 0 0">Clock in records your actual arrival. Late arrivals are flagged automatically against your ${sh.start} schedule.</p>` : ""}
+    ${qr}
+    ${!r && !off && !onLeave(ME, Y) ? `<p class="mut" style="font-size:12.5px;margin:12px 0 0">Your arrival is recorded when HR scans your code. Late arrivals are flagged automatically against your ${sh.start} schedule.</p>` : ""}
   </div>`;
       }
 
@@ -337,85 +344,7 @@
         );
       }
 
-      function clockIn() {
-        const sh = shiftOf(ME);
-        if (holOn(Y)) {
-          toast("Today is a holiday — no clock-in needed", true);
-          return;
-        }
-        if (isRest(Y, sh)) {
-          toast("Today is your rest day — no shift scheduled", true);
-          return;
-        }
-        if (onLeave(ME, Y)) {
-          toast("You're on approved leave today — no clock-in needed", true);
-          return;
-        }
-        const r = recFor(ME, Y);
-        if (r && r.in) {
-          toast("You already clocked in at " + r.in, true);
-          return;
-        }
-        const t = t5();
-        const rec = r || { e: ME, d: Y, in: null, out: null, note: "" };
-        if (!r) att.push(rec);
-        rec.in = t;
-        const late = Math.max(0, mins(t) - mins(sh.start));
-        render();
-        toast(
-          late > 0
-            ? "Clocked in at " + t + " · Late by " + late + " min"
-            : "Clocked in at " + t + " · On time",
-          late > 0,
-        );
-      }
-
-      function clockOut() {
-        const r = recFor(ME, Y);
-        if (!r || !r.in) {
-          toast("Clock in first — you can't clock out yet", true);
-          return;
-        }
-        if (r.out) {
-          toast("You already clocked out at " + r.out, true);
-          return;
-        }
-        const t = t5();
-        if (mins(t) < mins(r.in)) {
-          toast("Clock-out can't be before your clock-in (" + r.in + ")", true);
-          return;
-        }
-        r.out = t;
-        const worked = mins(t) - mins(r.in);
-        render();
-        toast(
-          "Clocked out at " +
-            t +
-            " · " +
-            Math.floor(worked / 60) +
-            "h " +
-            (worked % 60) +
-            "m worked",
-        );
-      }
-
       /* ===== button actions on this page ===== */
-      HIVE.actions["in"] = function (i, el, a) {
-        const done = (msg) => {
-          render();
-          if (msg) toast(msg);
-        };
-        clockIn();
-        return;
-      };
-      HIVE.actions["out"] = function (i, el, a) {
-        const done = (msg) => {
-          render();
-          if (msg) toast(msg);
-        };
-        clockOut();
-        return;
-      };
       HIVE.actions["calp"] = function (i, el, a) {
         const done = (msg) => {
           render();
