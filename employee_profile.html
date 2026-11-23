@@ -76,7 +76,7 @@
         ${fld("Date hired", shortDate(e.j), 1)}
         ${fld("Employment status", esc(e.st), 1)}
         ${fld("Assigned shift", esc(shiftOf(ME).name) + " · " + shiftOf(ME).start + "–" + shiftOf(ME).end, 1)}
-        ${fld("Monthly salary", PHP(e.s), 1)}
+        ${fld("Semi-monthly salary (per cutoff)", PHP(e.s), 1)}
         <p class="mut" style="font-size:12px;margin:12px 0 0">${ico("lock")} Fields marked with a lock are changed by HR/Admin only.</p>
       </div>
     </div>

@@ -94,25 +94,25 @@ const SHIFTS={
 const shiftOf=id=>SHIFTS[(emps.find(e=>e.id===id)||{}).sh||"day"]||SHIFTS.day;
 
 let emps=[
- {id:"HV-001",n:"Maria Santos",r:"Team Lead",d:"Customer Support",s:32000,j:"2023-02-14",b:"11-24",
+ {id:"HV-001",n:"Maria Santos",r:"Team Lead",d:"Customer Support",s:16000,j:"2023-02-14",b:"11-24",
   email:"maria.santos@hive.com",ph:"0917 123 4567",addr:"88 Sampaguita St, Quezon City",
   ec:"Ana Santos · 0917 000 0000",sh:"day",st:"Regular",pass:"hive123",twofa:true},
- {id:"HV-002",n:"John Reyes",r:"Sales Agent",d:"Sales Outreach",s:24000,j:"2023-06-01",b:"12-03",
+ {id:"HV-002",n:"John Reyes",r:"Sales Agent",d:"Sales Outreach",s:12000,j:"2023-06-01",b:"12-03",
   email:"john.reyes@hive.com",ph:"0918 222 3333",addr:"12 Rizal Ave, Makati City",
   ec:"Rosa Reyes · 0918 000 0000",sh:"day",st:"Regular",pass:"hive123",twofa:false},
- {id:"HV-003",n:"Angela Cruz",r:"Data Analyst",d:"IT & Data",s:38000,j:"2024-01-08",b:"11-27",
+ {id:"HV-003",n:"Angela Cruz",r:"Data Analyst",d:"IT & Data",s:19000,j:"2024-01-08",b:"11-27",
   email:"angela.cruz@hive.com",ph:"0919 333 4444",addr:"5 Katipunan Ave, Quezon City",
   ec:"Ben Cruz · 0919 000 0000",sh:"day",st:"Regular",pass:"hive123",twofa:true},
- {id:"HV-004",n:"Mark Dizon",r:"Support Agent",d:"Customer Support",s:22000,j:"2024-03-18",b:"01-15",
+ {id:"HV-004",n:"Mark Dizon",r:"Support Agent",d:"Customer Support",s:11000,j:"2024-03-18",b:"01-15",
   email:"mark.dizon@hive.com",ph:"0920 444 5555",addr:"21 Bonifacio St, Pasig City",
   ec:"Lia Dizon · 0920 000 0000",sh:"day",st:"Probationary",pass:"hive123",twofa:false},
- {id:"HV-005",n:"Liza Ramos",r:"Back Office Specialist",d:"Back Office",s:21000,j:"2024-07-22",b:"02-09",
+ {id:"HV-005",n:"Liza Ramos",r:"Back Office Specialist",d:"Back Office",s:10500,j:"2024-07-22",b:"02-09",
   email:"liza.ramos@hive.com",ph:"0921 555 6666",addr:"9 Aurora Blvd, Marikina City",
   ec:"Pedro Ramos · 0921 000 0000",sh:"mid",st:"Regular",pass:"hive123",twofa:false},
- {id:"HV-006",n:"Paolo Garcia",r:"Developer",d:"IT & Data",s:45000,j:"2022-11-02",b:"12-19",
+ {id:"HV-006",n:"Paolo Garcia",r:"Developer",d:"IT & Data",s:22500,j:"2022-11-02",b:"12-19",
   email:"paolo.garcia@hive.com",ph:"0922 666 7777",addr:"77 Maginhawa St, Quezon City",
   ec:"Nina Garcia · 0922 000 0000",sh:"mid",st:"Regular",pass:"hive123",twofa:true},
- {id:"HV-007",n:"Kristine Lim",r:"Executive Assistant",d:"Admin",s:26000,j:"2025-11-10",b:"03-30",
+ {id:"HV-007",n:"Kristine Lim",r:"Executive Assistant",d:"Admin",s:13000,j:"2025-11-10",b:"03-30",
   email:"kristine.lim@hive.com",ph:"0923 777 8888",addr:"31 Taft Ave, Manila",
   ec:"Sam Lim · 0923 000 0000",sh:"day",st:"Regular",pass:"hive123",twofa:false}
 ];
@@ -401,12 +401,15 @@ const WHT=[[333333,91770.70,.35],[83333,16770.70,.30],[33333,4270.70,.25],[16667
 
 function whtSemi(t){for(const r of WHT){if(t>r[0])return round2(r[1]+(t-r[0])*r[2])}return 0}
 /* standard (default) contributions per cutoff */
-const CONTRIB=e=>({sss:Math.min(e.s,30000)*.05/2,ph:e.s*.025/2,pg:Math.min(e.s*.02,200)/2});   // standard amounts
+/* employee share, as a flat % of the SEMI-MONTHLY salary (the amount paid each cutoff, no ceilings). Change a rate here only. */
+const RATES={sss:.05,ph:.025,pg:.02};
+const pctLbl=k=>+(RATES[k]*100).toFixed(2)+"%";
+const CONTRIB=e=>({sss:round2(e.s*RATES.sss),ph:round2(e.s*RATES.ph),pg:round2(e.s*RATES.pg)});   // standard amounts
 const isIC=e=>!!e&&e.ty==="Independent contractor";   // contractors: SSS / PhilHealth / Pag-IBIG are OFF by default (HR can still add them)
 /* adj = admin edits for one payslip: {sss:{on,amt},ph:{on,amt},pg:{on,amt},extra:[{label,amt}]} or null */
 function payWith(e,adj){
-  const half=e.s/2,allow=Math.round(e.s*.04/2);
-  const otHrs=(parseInt(e.id.slice(3),10)%3)*2,otRate=(e.s/2/22/8)*1.25,ot=Math.round(otHrs*otRate);
+  const half=e.s,allow=Math.round(e.s*.04);                    // e.s = semi-monthly salary = basic pay of one payslip
+  const otHrs=(parseInt(e.id.slice(3),10)%3)*2,otRate=(e.s/22/8)*1.25,ot=Math.round(otHrs*otRate);
   const extras=adj&&adj.extra?adj.extra:[];
   const extra=extras.reduce((a,x)=>a+(+x.amt||0),0);          // additional pay (e.g. holiday pay) — none by default
   const g=half+allow+ot+extra;
@@ -441,9 +444,9 @@ function slipDoc(id,period){
     </div>
     <div class="fig" style="margin-top:16px">DEDUCTIONS</div>
     <div class="docgrid">
-      ${crow("sss","SSS contribution")}
-      ${crow("ph","PhilHealth contribution")}
-      ${crow("pg","Pag-IBIG contribution")}
+      ${crow("sss","SSS contribution ("+pctLbl("sss")+")")}
+      ${crow("ph","PhilHealth contribution ("+pctLbl("ph")+")")}
+      ${crow("pg","Pag-IBIG contribution ("+pctLbl("pg")+")")}
       <div class="k">Taxable income (gross − allowances − contributions)</div><div class="v mut">${PHP(x.taxable)}</div>
       <div class="k">Withholding tax</div><div class="v">−${PHP(x.tx)}</div>
       <div class="k" style="font-weight:700;color:var(--tx)">Total deductions</div><div class="v" style="font-weight:700">−${PHP(x.ded)}</div>
@@ -585,13 +588,16 @@ const ST={
   calY:[()=>calY,v=>{calY=v}],calM:[()=>calM,v=>{calM=v}],selDate:[()=>selDate,v=>{selDate=v}],
   session:[()=>session,v=>{session=v}]
 };
+/* data saved before salary became semi-monthly (no salBasis marker) held MONTHLY salaries: halve them once */
+const semiEmps=o=>Array.isArray(o&&o.emps)?(o.salBasis==="semi"?o.emps:o.emps.map(e=>Object.assign({},e,{s:Math.round((+e.s||0)/2)}))):null;
 function saveState(){
   if(noSave)return;
-  try{const o={Y:Y,nid:nid};for(const k in ST)o[k]=ST[k][0]();localStorage.setItem(STORE,JSON.stringify(o))}catch(e){}
+  try{const o={Y:Y,nid:nid,salBasis:"semi"};for(const k in ST)o[k]=ST[k][0]();localStorage.setItem(STORE,JSON.stringify(o))}catch(e){}
 }
 function loadState(){            // returns true when saved data is from today
   try{const raw=localStorage.getItem(STORE);if(!raw)return false;const o=JSON.parse(raw);
     for(const k in ST){if(o[k]!==undefined)ST[k][1](o[k])}
+    const m=semiEmps(o);if(m)emps=m;
     if(o.nid)nid=o.nid;
     return o.Y===Y}catch(e){return false}
 }

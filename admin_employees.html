@@ -122,7 +122,7 @@
         <div><label for="aeU">Username <span class="req">*</span></label><input id="aeU" name="user" required autocomplete="off" placeholder="e.g. juan.delacruz"></div>
         <div><label for="aeR">Position <span class="req">*</span></label><input id="aeR" name="r" required></div>
         <div><label for="aeD">Department</label><select id="aeD" name="d">${D.map((d) => `<option>${d}</option>`).join("")}</select></div>
-        <div><label for="aeS">Monthly salary (₱) <span class="req">*</span></label><input id="aeS" name="s" type="number" min="0" required></div>
+        <div><label for="aeS">Semi-monthly salary (₱ per cutoff) <span class="req">*</span></label><input id="aeS" name="s" type="number" min="0" required></div>
         <div><label for="aeT">Worker type</label><select id="aeT" name="ty"><option>Employee</option><option>Independent contractor</option></select></div>
         <div><label for="aeJ">Date hired <span class="req">*</span></label><input id="aeJ" name="j" type="date" min="${Y}" value="${Y}" required></div>
         <div class="full"><label for="aeW">Temporary password <span class="req">*</span></label>
@@ -198,7 +198,7 @@
       ["Date hired", shortDate(e.j)],
       ["Username", e.user || e.id],
       ["Birthday", e.b || "—"],
-      ["Monthly salary", PHP(e.s)],
+      ["Semi-monthly salary (per cutoff)", PHP(e.s)],
       ["Email", e.email],
       ["Contact", e.ph || "—"],
       ["Address", e.addr || "—"],
@@ -280,7 +280,7 @@
           );
         if (!String(f.r || "").trim()) return errBox(form, "Enter a position.");
         if (!f.s || Number(f.s) <= 0)
-          return errBox(form, "Enter a valid monthly salary.");
+          return errBox(form, "Enter a valid semi-monthly salary (the amount paid each cutoff).");
         if (!f.j) return errBox(form, "Choose the date hired.");
         if (f.j < Y)
           return errBox(

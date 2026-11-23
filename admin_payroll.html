@@ -252,7 +252,7 @@
         }
         slipDraft.extra.push({
           label: "Holiday pay — " + h.n,
-          amt: Math.round(emp(slipDraft.id).s / 22),
+          amt: Math.round((emp(slipDraft.id).s * 2) / 22), // daily rate = monthly (2 cutoffs) / 22
           hd: h.d,
         });
         modal(slipEditHtml(), { wide: true, noClose: true });
