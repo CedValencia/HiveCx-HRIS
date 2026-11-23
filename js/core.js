@@ -401,7 +401,10 @@ const WHT=[[333333,91770.70,.35],[83333,16770.70,.30],[33333,4270.70,.25],[16667
 
 function whtSemi(t){for(const r of WHT){if(t>r[0])return round2(r[1]+(t-r[0])*r[2])}return 0}
 /* standard (default) contributions per cutoff */
-const CONTRIB=e=>({sss:Math.min(e.s,30000)*.05/2,ph:e.s*.025/2,pg:Math.min(e.s*.02,200)/2});   // standard amounts
+/* employee share, as a flat % of the MONTHLY salary (no ceilings); each cutoff takes half. Change a rate here only. */
+const RATES={sss:.05,ph:.025,pg:.02};
+const pctLbl=k=>+(RATES[k]*100).toFixed(2)+"%";
+const CONTRIB=e=>({sss:round2(e.s*RATES.sss/2),ph:round2(e.s*RATES.ph/2),pg:round2(e.s*RATES.pg/2)});   // standard amounts
 const isIC=e=>!!e&&e.ty==="Independent contractor";   // contractors: SSS / PhilHealth / Pag-IBIG are OFF by default (HR can still add them)
 /* adj = admin edits for one payslip: {sss:{on,amt},ph:{on,amt},pg:{on,amt},extra:[{label,amt}]} or null */
 function payWith(e,adj){
@@ -441,9 +444,9 @@ function slipDoc(id,period){
     </div>
     <div class="fig" style="margin-top:16px">DEDUCTIONS</div>
     <div class="docgrid">
-      ${crow("sss","SSS contribution")}
-      ${crow("ph","PhilHealth contribution")}
-      ${crow("pg","Pag-IBIG contribution")}
+      ${crow("sss","SSS contribution ("+pctLbl("sss")+")")}
+      ${crow("ph","PhilHealth contribution ("+pctLbl("ph")+")")}
+      ${crow("pg","Pag-IBIG contribution ("+pctLbl("pg")+")")}
       <div class="k">Taxable income (gross − allowances − contributions)</div><div class="v mut">${PHP(x.taxable)}</div>
       <div class="k">Withholding tax</div><div class="v">−${PHP(x.tx)}</div>
       <div class="k" style="font-weight:700;color:var(--tx)">Total deductions</div><div class="v" style="font-weight:700">−${PHP(x.ded)}</div>

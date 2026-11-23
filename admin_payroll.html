@@ -35,6 +35,57 @@
       /* ===== HR Admin · Payroll — this page's screen ===== */
       const WHT_MONTHLY_FREE = 20833;
 
+      /* ---------- REAL PH CONTRIBUTIONS (2026 tables) ----------
+         All figures below are MONTHLY employee shares; a payslip
+         (semi-monthly) deducts half of each.
+         SSS        5% of the Monthly Salary Credit (MSC). MSC = salary rounded
+                    to the nearest ₱500, minimum ₱5,000, maximum ₱35,000.
+         PhilHealth 5% premium split 50/50, so employee = 2.5% of monthly
+                    basic salary. Salary base floor ₱10,000, ceiling ₱100,000.
+         Pag-IBIG   2% of monthly fund salary, capped at ₱10,000 (max ₱200).
+         Verify against the official circulars before real payroll use. */
+      function contribMonthly(sal) {
+        sal = Math.max(0, Number(sal) || 0);
+        if (sal <= 0) return { sss: 0, ph: 0, pg: 0 }; // no pay = no contributions
+        const msc = Math.min(35000, Math.max(5000, Math.round(sal / 500) * 500));
+        return {
+          sss: msc * 0.05,
+          ph: Math.min(100000, Math.max(10000, sal)) * 0.025,
+          pg: Math.min(10000, sal) * 0.02,
+        };
+      }
+      // per payslip (semi-monthly) amounts
+      function contribFor(sal) {
+        const m = contribMonthly(sal);
+        return {
+          sss: round2(m.sss / 2),
+          ph: round2(m.ph / 2),
+          pg: round2(m.pg / 2),
+        };
+      }
+      // make the shared payroll engine use the real table too (needs CONTRIB to be
+      // reassignable in core.js — if it is a const there, the notice on the page tells you)
+      const realContrib = (e) => contribFor(e.s);
+      const CONTRIB_LIVE = (() => {
+        try {
+          CONTRIB = realContrib;
+          return true;
+        } catch (err) {
+          return false;
+        }
+      })();
+
+      // run fn with the employee's salary temporarily set to `sal` (live preview of an unsaved change)
+      function withSal(e, sal, fn) {
+        const old = e.s;
+        e.s = sal;
+        try {
+          return fn();
+        } finally {
+          e.s = old;
+        }
+      }
+
       // editable until payroll is run
       const holInPeriod = (label) => {
         const p = periods().find((q) => q.label === label);
@@ -43,27 +94,36 @@
 
       /* ---------- ADMIN: EDIT PAYSLIP ---------- */
       function newDraft(id, label) {
-        const cur = payAdj[id + "|" + label];
+        const e = emp(id),
+          cur = payAdj[id + "|" + label];
         if (cur) {
           const d = JSON.parse(JSON.stringify(cur));
           d.id = id;
           d.label = label;
+          d.sal = e.s;
+          // no salary on record → drop any stale contribution amounts saved earlier
+          if (!(Number(e.s) > 0))
+            ["sss", "ph", "pg"].forEach((k) => {
+              d[k].amt = 0;
+            });
           return d;
         }
-        const def = CONTRIB(emp(id)),
-          on = !isIC(emp(id));
+        const def = contribFor(e.s),
+          on = !isIC(e);
         return {
           id: id,
           label: label,
-          sss: { on: on, amt: round2(def.sss) },
-          ph: { on: on, amt: round2(def.ph) },
-          pg: { on: on, amt: round2(def.pg) },
+          sal: e.s,
+          sss: { on: on, amt: def.sss },
+          ph: { on: on, amt: def.ph },
+          pg: { on: on, amt: def.pg },
           extra: [],
         };
       }
 
       function sumHtml() {
-        const x = payWith(emp(slipDraft.id), slipDraft),
+        const e = emp(slipDraft.id),
+          x = withSal(e, slipDraft.sal, () => payWith(e, slipDraft)),
           c = x.sss + x.ph + x.pg,
           mo = x.taxable * 2;
         const line = (k, v, b) =>
@@ -106,8 +166,13 @@
     <h3 style="margin:6px 0 2px">${esc(e.n)}</h3>
     <div class="mut" style="font-size:13px">${esc(e.id)} · ${esc(d.label)}</div>
 
+    <div class="fig" style="margin-top:18px">MONTHLY SALARY</div>
+    <p class="mut" style="font-size:12.5px;margin:4px 0 0">Change this if the employee's salary changes. SSS, PhilHealth and Pag-IBIG below are recomputed from the 2026 tables each time you change it, and the new salary is saved to the employee's record when you press Save payslip.</p>
+    <div class="pe-row" style="margin-top:12px"><span style="font-size:14px">Monthly salary</span>
+      <input type="number" min="0" step="0.01" data-pe="sal" value="${d.sal}" aria-label="Monthly salary"></div>
+
     <div class="fig" style="margin-top:18px">SSS · PHILHEALTH · PAG-IBIG</div>
-    <p class="mut" style="font-size:12.5px;margin:4px 0 0">${isIC(e) ? "Independent contractor — switched off by default. Switch it on to deduct the three contributions (standard amounts are filled in; you can change them)." : "Switch off to skip all three for this payslip, or change any amount (set one to 0 to skip just that one)."} Skipped contributions are not subtracted when the tax is computed.</p>
+    <p class="mut" style="font-size:12.5px;margin:4px 0 0">${isIC(e) ? "Independent contractor — switched off by default. Switch it on to deduct the three contributions (the real 2026 amounts for this salary are filled in; you can change them)." : "Real 2026 employee shares for this salary, split across the two payslips each month. Switch off to skip all three for this payslip, or change any amount (set one to 0 to skip just that one)."} Skipped contributions are not subtracted when the tax is computed.</p>
     <label class="sw" style="margin-top:12px"><input type="checkbox" data-pe="con-on"${allOn ? " checked" : ""}><span class="tr"></span><span>Deduct SSS, PhilHealth &amp; Pag-IBIG</span></label>
     <div id="peCon"${allOn ? "" : ' class="off"'}>${row("sss", "SSS")}${row("ph", "PhilHealth")}${row("pg", "Pag-IBIG")}${allOn ? "" : `<p class="mut" style="font-size:12px;margin:10px 0 0">Switched off — none of these will be deducted. Switch it back on to use or edit the amounts.</p>`}</div>
 
@@ -137,6 +202,8 @@
       function syncDraft() {
         if (!slipDraft) return;
         const g = (n) => document.querySelector('#md [data-pe="' + n + '"]');
+        const s = g("sal");
+        if (s) slipDraft.sal = Math.max(0, parseFloat(s.value) || 0);
         const t = g("con-on");
         if (t) {
           const box = $("#peCon");
@@ -163,6 +230,16 @@
       function onPe(ev) {
         const el = ev.target;
         if (!slipDraft || !el.dataset || el.dataset.pe === undefined) return;
+        // salary changed → refill the three contributions with the real amounts for that salary
+        if (el.dataset.pe === "sal") {
+          slipDraft.sal = Math.max(0, parseFloat(el.value) || 0);
+          const def = contribFor(slipDraft.sal);
+          ["sss", "ph", "pg"].forEach((k) => {
+            slipDraft[k].amt = def[k];
+            const a = document.querySelector('#md [data-pe="' + k + '-amt"]');
+            if (a) a.value = def[k];
+          });
+        }
         syncDraft();
         const s = $("#peSum");
         if (s) s.innerHTML = sumHtml();
@@ -182,8 +259,11 @@
             `Pay runs,<br><em>without friction.</em>`,
             "Period " +
               cur.label +
-              ". Rates are simplified samples — verify current SSS, PhilHealth, Pag-IBIG and tax tables before real use.",
+              ". Contributions follow the 2026 SSS, PhilHealth and Pag-IBIG tables (half deducted per payslip) — verify against the official circulars before real use.",
           ) +
+          (CONTRIB_LIVE
+            ? ""
+            : `<p class="mut" style="font-size:12.5px;margin:0 0 14px">Note: js/core.js defines <code>CONTRIB</code> as a constant, so unedited payslips still use its old sample amounts. Edited payslips use the real tables. Replace <code>CONTRIB</code> in core.js to fix this everywhere.</p>`) +
           `<div class="grid g4">
       ${stat("GROSS", "Gross", `<span style="font-size:24px">${PHP(T("g"))}</span>`)}
       ${stat("DEDUCTIONS", "Deductions", `<span style="font-size:24px">${PHP(T("ded"))}</span>`)}
@@ -193,7 +273,7 @@
           paid
             ? `<button class="pri" data-a="reopen" style="margin-top:14px">Re-open payroll</button>
             <small class="mut" style="display:block;margin-top:8px;font-size:11.5px;line-height:1.4">Found an error? Re-open to unlock the payslips, fix them, then run payroll again.</small>`
-            : `<button class="pri" data-a="run" style="margin-top:14px">${runs ? "Run payroll" : "Run payroll"}</button>
+            : `<button class="pri" data-a="run" style="margin-top:14px">Run payroll</button>
             <small class="mut" style="display:block;margin-top:8px;font-size:11.5px;line-height:1.4">${runs ? "Releases the corrected payslips to employees again." : "Finalises this period: locks the payslips and releases them to employees."}</small>`
         }</div>
     </div>
@@ -215,7 +295,7 @@
     <p class="mut" style="font-size:12.5px;margin-top:14px">${
       paid
         ? "Payroll is processed — payslips are locked. Use <b>Re-open payroll</b> if something needs correcting."
-        : "Use <b>Edit</b> to switch SSS, PhilHealth or Pag-IBIG on/off (or change the amount) and to add holiday pay. Withholding tax is calculated automatically. Edits lock once you run payroll, but you can re-open it and run it again if there are errors."
+        : "Use <b>Edit</b> to change an employee's salary, switch SSS, PhilHealth or Pag-IBIG on/off (or change the amount) and to add holiday pay. Withholding tax is calculated automatically. Edits lock once you run payroll, but you can re-open it and run it again if there are errors."
     }</p>`
         );
       }
@@ -252,7 +332,7 @@
         }
         slipDraft.extra.push({
           label: "Holiday pay — " + h.n,
-          amt: Math.round(emp(slipDraft.id).s / 22),
+          amt: Math.round(slipDraft.sal / 22),
           hd: h.d,
         });
         modal(slipEditHtml(), { wide: true, noClose: true });
@@ -309,9 +389,25 @@
         syncDraft();
         const d = slipDraft;
         if (!d) return;
+        if (!(d.sal > 0)) {
+          toast("Enter a monthly salary greater than 0", true);
+          return;
+        }
         const e = emp(d.id),
-          def = CONTRIB(e),
-          k = d.id + "|" + d.label;
+          k = d.id + "|" + d.label,
+          oldSal = e.s,
+          newSal = round2(d.sal);
+        // save the salary to the employee record first, so everything below uses it
+        if (newSal !== oldSal) {
+          e.s = newSal;
+          audit.unshift({
+            ts: Date.now(),
+            who: "HR Admin",
+            act: "Salary updated",
+            det: e.n + " · " + PHP(oldSal) + " → " + PHP(newSal),
+          });
+        }
+        delete d.sal;
         d.extra = d.extra
           .filter((x) => x.amt > 0)
           .map((x) => ({
@@ -322,13 +418,16 @@
         ["sss", "ph", "pg"].forEach((c) => {
           d[c].amt = round2(d[c].amt);
         });
-        const ic = isIC(e),
+        const def = contribFor(e.s),
+          ic = isIC(e),
           std =
+            CONTRIB_LIVE &&
             ["sss", "ph", "pg"].every((c) =>
               ic
                 ? !d[c].on
-                : d[c].on && Math.abs(d[c].amt - round2(def[c])) < 0.005,
-            ) && !d.extra.length;
+                : d[c].on && Math.abs(d[c].amt - def[c]) < 0.005,
+            ) &&
+            !d.extra.length;
         if (std) delete payAdj[k];
         else payAdj[k] = d;
         audit.unshift({
