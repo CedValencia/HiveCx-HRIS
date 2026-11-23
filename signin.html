@@ -96,11 +96,14 @@
 </div>`;
       }
 
+      let authFail = ""; // why the last sign-in failed: "nouser" or "badpass"
       function auth(u, p) {
+        authFail = "";
         /* re-read the directory first: HR may have created this account after this tab was opened */
         try {
           const o = JSON.parse(localStorage.getItem(STORE) || "{}");
-          if (Array.isArray(o.emps)) emps = o.emps;
+          const m = semiEmps(o); // same salary migration as core.js
+          if (m) emps = m;
         } catch (e) {}
         const key = String(u || "")
           .trim()
@@ -110,14 +113,25 @@
             x.role === "adm" &&
             (x.user.toLowerCase() === key || x.id.toLowerCase() === key),
         );
-        if (adm) return adm.pass === p ? adm : null;
+        if (adm) {
+          if (adm.pass === p) return adm;
+          authFail = "badpass";
+          return null;
+        }
         /* employees: accounts created by HR (and the sample team) — sign in by username, email or employee ID */
         const e = emps.find((x) =>
           [x.user, x.email, x.id].some(
             (v) => v && String(v).toLowerCase() === key,
           ),
         );
-        if (!e || e.pass !== p) return null;
+        if (!e) {
+          authFail = "nouser";
+          return null;
+        }
+        if (e.pass !== p && e.pass !== String(p).trim()) {
+          authFail = "badpass";
+          return null;
+        }
         return { role: "emp", id: e.id };
       }
 
@@ -178,7 +192,9 @@
           if (!a) {
             errBox(
               form,
-              "Incorrect email/username or password. Use a demo account below.",
+              authFail === "nouser"
+                ? "No account “" + String(f.u).trim() + "” found in this browser. Accounts HR creates are saved in the browser HR used — sign in from that same browser and address (same http://localhost… link), or check the username HR gave you."
+                : "Incorrect password (it is case-sensitive). If HR created your account, use the temporary password they gave you.",
             );
             return;
           }
